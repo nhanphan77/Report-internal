@@ -501,10 +501,12 @@ export default function App() {
                     }
                     
                     const fetchedBoards = bData.values.map(b => ({ id: b.id, name: b.name }));
-                    setAvailableBoards(fetchedBoards);
-                    
-                    const initialBoardId = fetchedBoards[0].id;
-                    setSelectedBoardId(initialBoardId);
+setAvailableBoards(fetchedBoards);
+
+const exactBoard = fetchedBoards.find(b => b.name.includes(key));
+
+const initialBoardId = exactBoard ? exactBoard.id : fetchedBoards[0].id;
+setSelectedBoardId(initialBoardId);
 
                     try {
                         const sRes = await fetchWithJiraAuth(`https://api.atlassian.com/ex/jira/${jiraCloudId}/rest/agile/1.0/board/${initialBoardId}/sprint`, { headers: { 'Accept': 'application/json' } });
