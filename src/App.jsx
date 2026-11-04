@@ -1172,24 +1172,34 @@ setSelectedBoardId(initialBoardId);
                 if (matchedBoard) {
                     targetName = matchedBoard.name; 
                 }
-
-                let jqlString = `project in (${projectKeysInput.map(k => `"${k}"`).join(',')}) AND issuetype in (Bug, "Bug/Defect", Improvement, Question)`;
+// 1. Tạo chuỗi JQL cơ bản, KHÔNG gắn cứng Project Key để Board tự động lọc
+                let jqlString = `issuetype in (Bug, "Bug/Defect", Improvement, Question)`;
                 if (selectedParent !== 'All') jqlString += ` AND (parent = "${selectedParent}" OR "Epic Link" = "${selectedParent}")`;
                 if (selectedSprint !== 'All') jqlString += ` AND sprint = ${selectedSprint}`;
                 jqlString += ` ORDER BY created DESC`;
 
                 const issueMap = new Map();
                 let jHasMore = true;
-                let currentToken = null;
-                while (jHasMore) {
-                    const payload = { jql: jqlString, maxResults: 100, fields: ["summary", "status", "issuetype", "priority"] };
-                    if (currentToken) payload.nextPageToken = currentToken;
+                let startAt = 0; 
 
-                    const res = await fetchWithJiraAuth(`https://api.atlassian.com/ex/jira/${jiraCloudId}/rest/api/3/search/jql`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-                        body: JSON.stringify(payload)
-                    });
+                while (jHasMore) {
+                    let res;
+                    
+                    if (boardId) {
+                        const apiUrl = `https://api.atlassian.com/ex/jira/${jiraCloudId}/rest/agile/1.0/board/${boardId}/issue?jql=${encodeURIComponent(jqlString)}&maxResults=100&startAt=${startAt}&fields=summary,status,issuetype,priority`;
+                        res = await fetchWithJiraAuth(apiUrl, {
+                            method: 'GET',
+                            headers: { 'Accept': 'application/json' }
+                        });
+                    } else {
+                        const fallbackJql = `project in (${projectKeysInput.map(k => `"${k}"`).join(',')}) AND ${jqlString}`;
+                        const payload = { jql: fallbackJql, maxResults: 100, startAt: startAt, fields: ["summary", "status", "issuetype", "priority"] };
+                        res = await fetchWithJiraAuth(`https://api.atlassian.com/ex/jira/${jiraCloudId}/rest/api/3/search/jql`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                            body: JSON.stringify(payload)
+                        });
+                    }
 
                     if (!res.ok) {
                         hideLoadingToast();
@@ -1200,8 +1210,12 @@ setSelectedBoardId(initialBoardId);
                     const d = await res.json();
                     const items = d.issues || d.values || [];
                     items.forEach(iss => { if (iss && iss.key) issueMap.set(iss.key, iss); });
-                    if (d.nextPageToken && items.length > 0) currentToken = d.nextPageToken;
-                    else jHasMore = false;
+                    
+                    if (items.length > 0 && d.total > startAt + items.length) {
+                        startAt += items.length;
+                    } else {
+                        jHasMore = false;
+                    }
                 }
                 const jiraIssues = Array.from(issueMap.values());
                 detectedBoardName = targetName;
