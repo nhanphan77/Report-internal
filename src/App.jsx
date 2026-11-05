@@ -3,6 +3,10 @@ import './App.css';
 
 const GOOGLE_CLIENT_ID = "149310433677-4qv9hp52p00s4csq1eb1trj23nsiu945.apps.googleusercontent.com";
 const ATLASSIAN_CLIENT_ID = "OULWq49W7enCX1cVWMFtRTlj2axvx0Ge";
+const JIRA_SITE_URL = "https://vvortech.atlassian.net";
+const JIRA_SITE_HOST = "vvortech.atlassian.net";
+const JIRA_PROJECT_KEY = "STR";
+const JIRA_BOARD_ID = "1951";
 
 const DEFAULT_SCOPES = [
     "Logic", "Logic UI", "Specific UI", "Interruption", "Sound",
@@ -106,7 +110,7 @@ export default function App() {
 
     const [authTrigger, setAuthTrigger] = useState(0);
 
-    const [sheetName, setSheetName] = useState('');
+    const [sheetName, setSheetName] = useState(JIRA_PROJECT_KEY);
     const [sheetTabName, setSheetTabName] = useState('');
     const [dateReport, setDateReport] = useState('');
     const [customReportName, setCustomReportName] = useState('');
@@ -224,11 +228,14 @@ export default function App() {
                 const data = await res.json();
                 if (!res.ok || data.error) throw new Error(data.error || 'Failed to refresh token');
                 
+                if (!data.access_token) throw new Error('Refresh response did not contain an access token');
+
+                const nextRefreshToken = data.refresh_token || storedRefreshToken;
                 setJiraToken(data.access_token);
-                setJiraRefreshToken(data.refresh_token);
+                setJiraRefreshToken(nextRefreshToken);
                 localStorage.setItem('jira_access_token', data.access_token);
-                localStorage.setItem('jira_refresh_token', data.refresh_token);
-                
+                localStorage.setItem('jira_refresh_token', nextRefreshToken);
+
                 return data.access_token;
             } finally {
                 refreshPromise = null;
@@ -240,27 +247,49 @@ export default function App() {
 
     const fetchWithJiraAuth = async (url, options = {}) => {
         let currentToken = localStorage.getItem('jira_access_token');
+        if (!currentToken) throw new Error('Jira is not connected. Please connect SSO.');
+
         let res = await fetch(url, {
             ...options,
-            headers: { ...options.headers, 'Authorization': `Bearer ${currentToken}` }
+            headers: { ...options.headers, Authorization: `Bearer ${currentToken}` }
         });
+
         if (res.status === 401) {
             try {
                 currentToken = await refreshJiraToken();
                 res = await fetch(url, {
                     ...options,
-                    headers: { ...options.headers, 'Authorization': `Bearer ${currentToken}` }
+                    headers: { ...options.headers, Authorization: `Bearer ${currentToken}` }
                 });
             } catch (err) {
-                handleJiraDisconnect();
-                throw new Error("Jira session expired. Please Connect SSO again.");
+                const message = String(err?.message || '');
+                if (/invalid_grant|refresh token.*(expired|invalid|revoked)|no refresh token/i.test(message)) {
+                    handleJiraDisconnect();
+                    throw new Error('Jira refresh token is no longer valid. Please connect SSO again.');
+                }
+                throw new Error(`Could not refresh Jira session: ${message}`);
             }
         }
+
         return res;
     };
 
     useEffect(() => {
         const currentToken = localStorage.getItem('jira_access_token');
+        const storedWorkspaces = JSON.parse(localStorage.getItem('jira_workspaces') || '[]');
+        const configuredWorkspace = storedWorkspaces.find(resource => {
+            try {
+                return new URL(resource.url).hostname.toLowerCase() === JIRA_SITE_HOST;
+            } catch {
+                return false;
+            }
+        });
+
+        if (configuredWorkspace && configuredWorkspace.id !== jiraCloudId) {
+            setJiraCloudId(configuredWorkspace.id);
+            localStorage.setItem('jira_cloud_id', configuredWorkspace.id);
+        }
+
         if (currentToken && jiraCloudId) {
             fetchWithJiraAuth(`https://api.atlassian.com/ex/jira/${jiraCloudId}/rest/api/2/project`, { headers: { 'Accept': 'application/json' } })
                 .then(res => {
@@ -354,7 +383,7 @@ export default function App() {
         if (savedData) {
             try {
                 const state = JSON.parse(savedData);
-                if (state.sheetName) setSheetName(state.sheetName);
+                setSheetName(JIRA_PROJECT_KEY);
                 if (state.sheetTabName) setSheetTabName(state.sheetTabName);
                 if (state.dateReport) setDateReport(state.dateReport);
                 if (state.customReportName) setCustomReportName(state.customReportName);
@@ -422,13 +451,22 @@ export default function App() {
                     if (!resourcesRes.ok) throw new Error('Failed to fetch accessible resources');
                     const resourcesData = await resourcesRes.json();
                     
-                    setWorkspaces(resourcesData);
-                    localStorage.setItem('jira_workspaces', JSON.stringify(resourcesData));
+                    const matchingWorkspace = resourcesData.find(resource => {
+                        try {
+                            return new URL(resource.url).hostname.toLowerCase() === JIRA_SITE_HOST;
+                        } catch {
+                            return false;
+                        }
+                    });
 
-                    if (resourcesData.length > 0) {
-                        setJiraCloudId(resourcesData[0].id);
-                        localStorage.setItem('jira_cloud_id', resourcesData[0].id);
-                    }			
+                    if (!matchingWorkspace) {
+                        throw new Error(`Your Atlassian account does not have access to ${JIRA_SITE_HOST}.`);
+                    }
+
+                    setWorkspaces([matchingWorkspace]);
+                    localStorage.setItem('jira_workspaces', JSON.stringify([matchingWorkspace]));
+                    setJiraCloudId(matchingWorkspace.id);
+                    localStorage.setItem('jira_cloud_id', matchingWorkspace.id);
 
                     setJiraToken(data.access_token);
                     setJiraRefreshToken(data.refresh_token);
@@ -602,29 +640,31 @@ export default function App() {
                     }
                 } catch (e) { }
 
-                const bRes = await fetchWithJiraAuth(`https://api.atlassian.com/ex/jira/${jiraCloudId}/rest/agile/1.0/board?projectKeyOrId=${key}`, { headers: { 'Accept': 'application/json' } });
-                if (bRes.ok) {
-                    const bData = await bRes.json();
-                    if (!bData || !bData.values || bData.values.length === 0) {
-                        throw new Error(`No board found for Project Key: ${key}`);
-                    }
-                    
-                    const fetchedBoards = bData.values.map(b => ({ id: b.id, name: b.name }));
-                    setAvailableBoards(fetchedBoards);
-                    
-                    initialBoardId = fetchedBoards[0].id;
-                    setSelectedBoardId(initialBoardId);
+                const boardRes = await fetchWithJiraAuth(
+                    `https://api.atlassian.com/ex/jira/${jiraCloudId}/rest/agile/1.0/board/${JIRA_BOARD_ID}`,
+                    { headers: { Accept: 'application/json' } }
+                );
 
-                    try {
-                        const sRes = await fetchWithJiraAuth(`https://api.atlassian.com/ex/jira/${jiraCloudId}/rest/agile/1.0/board/${initialBoardId}/sprint`, { headers: { 'Accept': 'application/json' } });
-                        if (sRes.ok) {
-                            const sData = await sRes.json();
-                            sData.values?.forEach(s => sprintsMap.set(s.id, s.name));
-                        }
-                    } catch (e) { }
-                } else {
-                    throw new Error(`Project Key does not exist or access denied: ${key}`);
+                if (!boardRes.ok) {
+                    throw new Error(`Cannot access Jira board ${JIRA_BOARD_ID} (HTTP ${boardRes.status}).`);
                 }
+
+                const boardData = await boardRes.json();
+                const configuredBoard = { id: JIRA_BOARD_ID, name: boardData.name || `Board ${JIRA_BOARD_ID}` };
+                setAvailableBoards([configuredBoard]);
+                initialBoardId = JIRA_BOARD_ID;
+                setSelectedBoardId(JIRA_BOARD_ID);
+
+                try {
+                    const sRes = await fetchWithJiraAuth(
+                        `https://api.atlassian.com/ex/jira/${jiraCloudId}/rest/agile/1.0/board/${JIRA_BOARD_ID}/sprint`,
+                        { headers: { Accept: 'application/json' } }
+                    );
+                    if (sRes.ok) {
+                        const sData = await sRes.json();
+                        sData.values?.forEach(s => sprintsMap.set(s.id, s.name));
+                    }
+                } catch (e) { }
 
                 try {
                     const eRes = await fetchWithJiraAuth(`https://api.atlassian.com/ex/jira/${jiraCloudId}/rest/api/3/search/jql`, {
@@ -858,7 +898,7 @@ export default function App() {
             initiateJiraSSO();
             return;
         }
-        const projectKeysInput = sheetName.split(',').map(k => k.trim()).filter(Boolean);
+        const projectKeysInput = [JIRA_PROJECT_KEY];
         const qcNamesInput = qcNames.trim();
         const versionGameInput = versionGame.trim();
         const versionAppInput = versionApp.trim();
@@ -1266,7 +1306,7 @@ export default function App() {
 
             try {
                 let targetName = projectKeysInput.join(', ');
-                let realKey = projectKeysInput[0];
+                let realKey = JIRA_PROJECT_KEY;
                 let projectStyle = '';
 
                 try {
@@ -1294,7 +1334,7 @@ export default function App() {
                     }
                 } else {
                     // === MODE 1: CÁCH HIỆN TẠI (GIỮ NGUYÊN) ===
-                    let boardId = selectedBoardId;
+                    let boardId = JIRA_BOARD_ID;
                     const matchedBoard = availableBoards.find(b => b.id == boardId);
                     if (matchedBoard) {
                         targetName = matchedBoard.name; 
@@ -1375,7 +1415,7 @@ export default function App() {
                 detectedBoardName = targetName;
 
                 const currentWorkspace = workspaces.find(ws => ws.id === jiraCloudId);
-                const baseUrl = currentWorkspace ? currentWorkspace.url : `https://enotion.atlassian.net`;
+                const baseUrl = currentWorkspace ? currentWorkspace.url : JIRA_SITE_URL;
                 const pathPrefix = (projectStyle === 'classic') ? '/jira/software/c/projects' : '/jira/software/projects';
 
                 if (selectedBoardId) {
@@ -1700,25 +1740,9 @@ export default function App() {
                 </div>
 
                 <div className="flex items-center gap-4">
-                    {workspaces.length > 0 && jiraToken && (
-                        <div className="flex items-center gap-2">
-                            <label className="text-xs font-semibold text-slate-600">Workspace:</label>
-                            <select 
-                                value={jiraCloudId || ''} 
-                                onChange={e => {
-                                    const newCloudId = e.target.value;
-                                    setJiraCloudId(newCloudId);
-                                    localStorage.setItem('jira_cloud_id', newCloudId);
-                                    showToast("Switched Jira Workspace", 'success');
-                                }}
-                                className="h-10 px-3 bg-white border border-slate-300 rounded-xl text-xs font-medium text-slate-800 focus:outline-none focus:border-indigo-600 shadow-sm"
-                            >
-                                {workspaces.map(ws => (
-                                    <option key={ws.id} value={ws.id}>
-                                        {ws.name} ({extractDomain(ws.url)})
-                                    </option>
-                                ))}
-                            </select>
+                    {jiraToken && jiraCloudId && (
+                        <div className="text-xs font-semibold text-slate-600">
+                            Jira: {JIRA_SITE_HOST} · Project {JIRA_PROJECT_KEY} · Board {JIRA_BOARD_ID}
                         </div>
                     )}
 
@@ -1756,25 +1780,14 @@ export default function App() {
 
                     {/* BƯỚC 1: CHỌN PROJECT KEY */}
                     <div className="flex flex-col gap-1.5">
-                        <label className="text-xs font-semibold text-slate-600">1. Project Key (Board dự án lớn)</label>
-                        <div className="flex gap-2">
-                            <div className="flex-1">
-                                <SearchableDropdown 
-                                    ref={projectKeyRef}
-                                    options={availableProjects} 
-                                    value={sheetName} 
-                                    onChange={val => {
-                                        setSheetName(val);
-                                        setFormErrors(prev => prev.filter(err => err !== "Project Key"));
-                                    }} 
-                                    placeholder="Chọn Project Key (vd: STR)..."
-                                    isError={formErrors.includes("Project Key")}
-                                />
-                            </div>
-                            <button type="button" onClick={handleLoadStatuses} className="px-3.5 h-10 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-md transition-all flex items-center gap-1">
-                                <span>↻ Sync</span>
-                            </button>
+                        <label className="text-xs font-semibold text-slate-600">1. Jira Project</label>
+                        <div className="flex items-center justify-between gap-3 h-10 px-3.5 bg-slate-50 border border-slate-200 rounded-xl">
+                            <span className="text-xs font-bold text-slate-800">{JIRA_PROJECT_KEY}</span>
+                            <span className="text-[10px] font-semibold text-slate-500">{JIRA_SITE_HOST}</span>
                         </div>
+                        <button type="button" onClick={handleLoadStatuses} className="w-full px-3.5 h-10 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-md transition-all flex items-center justify-center gap-1">
+                            <span>↻ Sync Jira Data</span>
+                        </button>
                     </div>
 
                     {/* HIỂN THỊ DÀNH CHO TAB MỚI: FLOW HIERARCHY */}
@@ -1815,17 +1828,10 @@ export default function App() {
                     ) : (
                         /* CHẾ ĐỘ CŨ (CLASSIC FLOW) */
                         <>
-                            {availableBoards.length > 0 && (
-                                <div className="flex flex-col gap-1.5 mt-2 bg-indigo-50/50 p-3 rounded-xl border border-indigo-100">
-                                    <label className="text-xs font-bold text-indigo-700">Select Specific Board (Studio/Game)</label>
-                                    <SearchableDropdown
-                                        options={availableBoards.map(b => ({ value: b.id, label: b.name }))}
-                                        value={selectedBoardId}
-                                        onChange={handleBoardChange}
-                                        placeholder="Search and select a board..."
-                                    />
-                                </div>
-                            )}
+                            <div className="flex flex-col gap-1.5 mt-2 bg-indigo-50/50 p-3 rounded-xl border border-indigo-100">
+                                <label className="text-xs font-bold text-indigo-700">Jira Board</label>
+                                <div className="text-xs font-semibold text-indigo-900">Board ID: {JIRA_BOARD_ID}</div>
+                            </div>
 
                             <div className="grid grid-cols-2 gap-3">
                                 <div className="flex flex-col gap-1.5">
