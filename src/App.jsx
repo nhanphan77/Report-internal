@@ -88,19 +88,11 @@ const SearchableDropdown = React.forwardRef(({ options, value, onChange, placeho
     );
 });
 
-let globalRefreshPromise = null;
-
 export default function App() {
-    const authLock = useRef(false);
-    const disconnectLock = useRef(false);
-    const [isLoggingIn, setIsLoggingIn] = useState(false);
-    
     const [availableProjects, setAvailableProjects] = useState([]);
     const [availableSheetTabs, setAvailableSheetTabs] = useState([]);
     const [availableBoards, setAvailableBoards] = useState([]);
     const [selectedBoardId, setSelectedBoardId] = useState('');
-    const [workspaceMode, setWorkspaceMode] = useState('old');
-    
     const [workspaces, setWorkspaces] = useState(() => JSON.parse(localStorage.getItem('jira_workspaces')) || []);
     const [jiraToken, setJiraToken] = useState(() => localStorage.getItem('jira_access_token') || null);
     const [jiraRefreshToken, setJiraRefreshToken] = useState(() => localStorage.getItem('jira_refresh_token') || null);
@@ -186,9 +178,6 @@ export default function App() {
     };
 
     const handleJiraDisconnect = () => {
-        if (disconnectLock.current) return;
-        disconnectLock.current = true;
-
         localStorage.removeItem('jira_access_token');
         localStorage.removeItem('jira_refresh_token');
         localStorage.removeItem('jira_cloud_id');
@@ -199,82 +188,52 @@ export default function App() {
         setAvailableBoards([]);
         setJiraSprints([]);
         setJiraParents([]);
-        showToast("Jira Session Expired. Please Connect SSO again.", 'error');
-
-        setTimeout(() => {
-            disconnectLock.current = false;
-        }, 2000);
+        showToast("Disconnected Jira.", 'success');
     };
 
     const refreshJiraToken = async () => {
-        if (globalRefreshPromise) return globalRefreshPromise;
-
-        globalRefreshPromise = (async () => {
-            try {
-                const storedRefreshToken = localStorage.getItem('jira_refresh_token');
-                if (!storedRefreshToken) return null;
-                
-                const res = await fetch('/api/jira-refresh', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ refreshToken: storedRefreshToken })
-                });
-                const data = await res.json();
-                
-                if (!res.ok || data.error) return null;
-                
-                localStorage.setItem('jira_access_token', data.access_token);
-                localStorage.setItem('jira_refresh_token', data.refresh_token);
-                setJiraToken(data.access_token);
-                setJiraRefreshToken(data.refresh_token);
-                
-                return data.access_token;
-            } catch (err) {
-                return null;
-            } finally {
-                globalRefreshPromise = null;
-            }
-        })();
-
-        return globalRefreshPromise;
+        const storedRefreshToken = localStorage.getItem('jira_refresh_token');
+        if (!storedRefreshToken) throw new Error("No refresh token available");
+        const res = await fetch('/api/jira-refresh', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ refreshToken: storedRefreshToken })
+        });
+        const data = await res.json();
+        if (!res.ok || data.error) throw new Error(data.error || 'Failed to refresh token');
+        setJiraToken(data.access_token);
+        setJiraRefreshToken(data.refresh_token);
+        localStorage.setItem('jira_access_token', data.access_token);
+        localStorage.setItem('jira_refresh_token', data.refresh_token);
+        return data.access_token;
     };
 
     const fetchWithJiraAuth = async (url, options = {}) => {
         let currentToken = localStorage.getItem('jira_access_token');
-        if (!currentToken || currentToken === 'null' || currentToken === 'undefined') {
-            throw new Error("JIRA_SESSION_EXPIRED");
-        }
-
         let res = await fetch(url, {
             ...options,
             headers: { ...options.headers, 'Authorization': `Bearer ${currentToken}` }
         });
-        
         if (res.status === 401) {
-            currentToken = await refreshJiraToken();
-            if (!currentToken) {
-                throw new Error("JIRA_SESSION_EXPIRED");
-            }
-            
-            res = await fetch(url, {
-                ...options,
-                headers: { ...options.headers, 'Authorization': `Bearer ${currentToken}` }
-            });
-            
-            if (res.status === 401) {
-                throw new Error("JIRA_SESSION_EXPIRED");
+            try {
+                currentToken = await refreshJiraToken();
+                res = await fetch(url, {
+                    ...options,
+                    headers: { ...options.headers, 'Authorization': `Bearer ${currentToken}` }
+                });
+            } catch (err) {
+                handleJiraDisconnect();
+                throw new Error("Jira session expired. Please Connect SSO again.");
             }
         }
         return res;
     };
 
     useEffect(() => {
-        if (isLoggingIn) return; 
-
         if (jiraToken && jiraCloudId) {
             fetchWithJiraAuth(`https://api.atlassian.com/ex/jira/${jiraCloudId}/rest/api/2/project`, { headers: { 'Accept': 'application/json' } })
                 .then(res => {
-                    if (!res.ok) throw new Error("Failed to load projects.");
+                    if (!res.ok) throw new Error("Failed");
                     return res.json();
                 })
                 .then(data => {
@@ -282,15 +241,11 @@ export default function App() {
                         setAvailableProjects(data.map(p => ({ value: p.key, label: `${p.key} - ${p.name}` })));
                     }
                 })
-                .catch(e => {
-                    if (e.message === "JIRA_SESSION_EXPIRED") {
-                        handleJiraDisconnect();
-                    }
-                });
+                .catch(e => console.error("Failed to load projects", e));
         } else {
             setAvailableProjects([]);
         }
-    }, [jiraToken, jiraCloudId, isLoggingIn]);
+    }, [jiraToken, jiraCloudId]);
 
     useEffect(() => {
         const savedData = localStorage.getItem('last_session_state');
@@ -331,7 +286,6 @@ export default function App() {
                 if (state.selectedParent) setSelectedParent(state.selectedParent);
                 if (state.selectedSprint) setSelectedSprint(state.selectedSprint);
                 if (Array.isArray(state.availableSheetTabs)) setAvailableSheetTabs(state.availableSheetTabs);
-                if (state.workspaceMode !== undefined) setWorkspaceMode(state.workspaceMode);
             } catch (e) { }
         } else {
             const initMap = {};
@@ -342,12 +296,7 @@ export default function App() {
         const handleAuth = async () => {
             const urlParams = new URLSearchParams(window.location.search);
             const code = urlParams.get('code');
-            
-            if (code && !authLock.current) {
-                authLock.current = true;
-                setIsLoggingIn(true);
-                window.history.replaceState({}, document.title, window.location.pathname);
-                
+            if (code) {
                 showToast('Processing Jira SSO login...', 'loading');
                 try {
                     const redirectUri = window.location.origin + window.location.pathname;
@@ -372,25 +321,23 @@ export default function App() {
                     setWorkspaces(resourcesData);
                     localStorage.setItem('jira_workspaces', JSON.stringify(resourcesData));
 
-                    localStorage.setItem('jira_access_token', data.access_token);
-                    localStorage.setItem('jira_refresh_token', data.refresh_token);
-                    
                     if (resourcesData.length > 0) {
-                        const cId = resourcesData[0].id;
-                        setJiraCloudId(cId);
-                        localStorage.setItem('jira_cloud_id', cId);
-                    }
-                    
+                        setJiraCloudId(resourcesData[0].id);
+                        localStorage.setItem('jira_cloud_id', resourcesData[0].id);
+                    }			
+
                     setJiraToken(data.access_token);
                     setJiraRefreshToken(data.refresh_token);
-
+                    setJiraCloudId(data.cloud_id);
+                    localStorage.setItem('jira_access_token', data.access_token);
+                    localStorage.setItem('jira_refresh_token', data.refresh_token);
+                    localStorage.setItem('jira_cloud_id', data.cloud_id);
+                    window.history.replaceState({}, document.title, window.location.pathname);
                     hideLoadingToast();
                     showToast("Connected to Jira SSO successfully!", 'success');
                 } catch (e) {
                     hideLoadingToast();
                     showToast("Jira Login Error: " + e.message, 'error');
-                } finally {
-                    setIsLoggingIn(false);
                 }
             }
         };
@@ -404,7 +351,7 @@ export default function App() {
             scopesList, checkedScopes: checkedScopesMap, jiraStatusesList: jiraStatuses, checkedJiraStatuses_B: checkedJiraB,
             checkedJiraStatuses_Unverified: checkedJiraUnverified, checkedJiraStatuses_Pending: checkedJiraPending,
             jiraParents, jiraSprints, selectedParent, selectedSprint,
-            jiraTagsList, checkedJiraTagsMap, availableSheetTabs, workspaceMode
+            jiraTagsList, checkedJiraTagsMap, availableSheetTabs
         };
         localStorage.setItem('last_session_state', JSON.stringify(config));
     }, [
@@ -412,12 +359,10 @@ export default function App() {
         qcNames, testingStatus, chkCustomNote, customNotesData, chkCustomIframe, customIframesData, chkWebapp, chkApptek, chkPreprod, linkShared, linkPreprod,
         scopesList, checkedScopesMap, jiraStatuses, checkedJiraB, checkedJiraUnverified, checkedJiraPending,
         jiraParents, jiraSprints, selectedParent, selectedSprint,
-        jiraTagsList, checkedJiraTagsMap, availableSheetTabs, workspaceMode
+        jiraTagsList, checkedJiraTagsMap, availableSheetTabs
     ]);
 
     useEffect(() => {
-        if (isLoggingIn) return;
-
         const key = sheetName.trim();
         if (!key || !jiraToken || !jiraCloudId) return;
 
@@ -429,11 +374,11 @@ export default function App() {
         return () => {
             if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
         };
-    }, [sheetName, workspaceMode, isLoggingIn]);
+    }, [sheetName]);
 
     const initiateJiraSSO = () => {
         const redirectUri = encodeURIComponent(window.location.origin + window.location.pathname);
-        const scope = encodeURIComponent("read:board:jira-software read:issue:jira-software read:sprint:jira-software read:issue:jira read:project:jira read:user:jira offline_access");
+        const scope = encodeURIComponent("read:jira-work read:jira-user read:board-scope:jira-software read:project:jira offline_access");
         const authUrl = `https://auth.atlassian.com/authorize?audience=api.atlassian.com&client_id=${ATLASSIAN_CLIENT_ID}&scope=${scope}&redirect_uri=${redirectUri}&response_type=code&prompt=consent`;
         window.location.href = authUrl;
     };
@@ -530,8 +475,8 @@ export default function App() {
         try {
             const keys = projectKeysStr.split(',').map(k => k.trim()).filter(Boolean);
             const statusSet = new Set();
+            const sprintsMap = new Map();
             const parentsMap = new Map();
-            let sprintsMap = new Map();
 
             for (const key of keys) {
                 try {
@@ -545,37 +490,30 @@ export default function App() {
                             });
                         });
                     }
-                } catch (e) {
-                    if (e.message === "JIRA_SESSION_EXPIRED") throw e;
-                }
+                } catch (e) { }
 
-                try {
-                    const bRes = await fetchWithJiraAuth(`https://api.atlassian.com/ex/jira/${jiraCloudId}/rest/agile/1.0/board?projectKeyOrId=${key}`, { headers: { 'Accept': 'application/json' } });
-                    if (bRes.ok) {
-                        const bData = await bRes.json();
-                        if (bData && bData.values && bData.values.length > 0) {
-                            const fetchedBoards = bData.values.map(b => ({ id: b.id, name: b.name }));
-                            setAvailableBoards(fetchedBoards);
-
-                            const exactBoard = fetchedBoards.find(b => b.name.includes(key));
-                            const initialBoardId = exactBoard ? exactBoard.id : fetchedBoards[0].id;
-                            setSelectedBoardId(initialBoardId);
-                            
-                            if (workspaceMode === 'old') {
-                                try {
-                                    const sRes = await fetchWithJiraAuth(`https://api.atlassian.com/ex/jira/${jiraCloudId}/rest/agile/1.0/board/${initialBoardId}/sprint?state=active,future`, { headers: { 'Accept': 'application/json' } });
-                                    if (sRes.ok) {
-                                        const sData = await sRes.json();
-                                        sData.values?.forEach(sp => sprintsMap.set(sp.id, sp.name));
-                                    }
-                                } catch (e) {
-                                    if (e.message === "JIRA_SESSION_EXPIRED") throw e;
-                                }
-                            }
-                        }
+                const bRes = await fetchWithJiraAuth(`https://api.atlassian.com/ex/jira/${jiraCloudId}/rest/agile/1.0/board?projectKeyOrId=${key}`, { headers: { 'Accept': 'application/json' } });
+                if (bRes.ok) {
+                    const bData = await bRes.json();
+                    if (!bData || !bData.values || bData.values.length === 0) {
+                        throw new Error(`No board found for Project Key: ${key}`);
                     }
-                } catch (e) {
-                    if (e.message === "JIRA_SESSION_EXPIRED") throw e;
+                    
+                    const fetchedBoards = bData.values.map(b => ({ id: b.id, name: b.name }));
+                    setAvailableBoards(fetchedBoards);
+                    
+                    const initialBoardId = fetchedBoards[0].id;
+                    setSelectedBoardId(initialBoardId);
+
+                    try {
+                        const sRes = await fetchWithJiraAuth(`https://api.atlassian.com/ex/jira/${jiraCloudId}/rest/agile/1.0/board/${initialBoardId}/sprint`, { headers: { 'Accept': 'application/json' } });
+                        if (sRes.ok) {
+                            const sData = await sRes.json();
+                            sData.values?.forEach(s => sprintsMap.set(s.id, s.name));
+                        }
+                    } catch (e) { }
+                } else {
+                    throw new Error(`Project Key does not exist or access denied: ${key}`);
                 }
 
                 try {
@@ -588,9 +526,7 @@ export default function App() {
                         const eData = await eRes.json();
                         eData.issues?.forEach(iss => parentsMap.set(iss.key, iss.fields?.summary || iss.key));
                     }
-                } catch (e) {
-                    if (e.message === "JIRA_SESSION_EXPIRED") throw e;
-                }
+                } catch (e) { }
             }
 
             try {
@@ -598,8 +534,7 @@ export default function App() {
                 let jHasMore = true;
                 let currentToken = null;
                 const keysStr = keys.map(k => `"${k}"`).join(',');
-                const types = workspaceMode === 'new' ? `Bug, "Bug/Defect", Improvement, Question, "Sub-task", "Sub-Bug"` : `Bug, "Bug/Defect", Improvement, Question`;
-                const tagJql = `project in (${keysStr}) AND issuetype in (${types}) ORDER BY created DESC`;
+                const tagJql = `project in (${keysStr}) AND issuetype in (Bug, "Bug/Defect", Improvement, Question, "Sub-task", "Sub-Bug") ORDER BY created DESC`;
                 
                 while (jHasMore) {
                     const payload = { jql: tagJql, maxResults: 100, fields: ["summary"] };
@@ -616,8 +551,10 @@ export default function App() {
                         const items = d.issues || d.values || [];
                         items.forEach(iss => {
                             const summary = iss.fields?.summary || '';
-                            const match = summary.match(/\[([^\]]+)\]/);
-                            if (match) tagSet.add(match[1].trim().toUpperCase());
+                            const matches = summary.matchAll(/\[([^\]]+)\]/g);
+                            for (const match of matches) {
+                                tagSet.add(match[1].trim().toUpperCase());
+                            }
                         });
                         if (d.nextPageToken && items.length > 0) currentToken = d.nextPageToken;
                         else jHasMore = false;
@@ -640,7 +577,7 @@ export default function App() {
                     });
                 }
             } catch (e) {
-                if (e.message === "JIRA_SESSION_EXPIRED") throw e;
+                console.error("Error while loading tags:", e);
             }
 
             if (statusSet.size > 0) {
@@ -680,8 +617,8 @@ export default function App() {
                 });
             }
 
-            setJiraParents(Array.from(parentsMap.entries()).map(([key, name]) => ({ key, name })));
             setJiraSprints(Array.from(sprintsMap.entries()).map(([id, name]) => ({ id, name })));
+            setJiraParents(Array.from(parentsMap.entries()).map(([key, name]) => ({ key, name })));
 
             if (!isAuto) {
                 hideLoadingToast();
@@ -690,11 +627,7 @@ export default function App() {
         } catch (err) {
             setJiraStatuses([]);
             hideLoadingToast();
-            if (err.message === "JIRA_SESSION_EXPIRED") {
-                handleJiraDisconnect();
-            } else {
-                showToast("Auto-sync failed: " + err.message, 'error');
-            }
+            showToast("Auto-sync failed: " + err.message, 'error');
         }
     };
 
@@ -702,9 +635,26 @@ export default function App() {
         fetchJiraStatuses(sheetName.trim(), false);
     };
 
-    const handleBoardChange = (e) => {
-        setSelectedBoardId(e.target.value);
-        setSelectedSprint('All');
+    const handleBoardChange = async (e) => {
+        const newBoardId = e.target.value;
+        setSelectedBoardId(newBoardId);
+        if (!newBoardId || !jiraCloudId) return;
+
+        showToast('Loading sprints for selected board...', 'loading');
+        try {
+            const sRes = await fetchWithJiraAuth(`https://api.atlassian.com/ex/jira/${jiraCloudId}/rest/agile/1.0/board/${newBoardId}/sprint`, { headers: { 'Accept': 'application/json' } });
+            if (sRes.ok) {
+                const sData = await sRes.json();
+                const sList = sData.values?.map(s => ({ id: s.id, name: s.name })) || [];
+                setJiraSprints(sList);
+                setSelectedSprint('All'); 
+                hideLoadingToast();
+                showToast('Loaded sprints for board!', 'success');
+            }
+        } catch (err) {
+            hideLoadingToast();
+            setJiraSprints([]);
+        }
     };
 
     const toggleAllJiraCategory = (category, selectAll) => {
@@ -1214,61 +1164,45 @@ export default function App() {
                         if (pData && pData.key) realKey = pData.key;
                         if (pData && pData.style) projectStyle = pData.style; 
                     }
-                } catch (e) {
-                    if (e.message === "JIRA_SESSION_EXPIRED") throw e;
-                }
+                } catch (e) { }
 
                 let boardId = selectedBoardId;
-                let boardPrefix = '';
                 const matchedBoard = availableBoards.find(b => b.id == boardId);
                 if (matchedBoard) {
                     targetName = matchedBoard.name; 
-                    boardPrefix = matchedBoard.name.split('-')[0].trim();
                 }
 
-                let jqlString = '';
-                
-                if (workspaceMode === 'new') {
-                    let parentTaskKeys = [];
-                    showToast('Finding [QC] Bugs List task...', 'loading');
-                    let qcListJql = `project in (${projectKeysInput.map(k => `"${k}"`).join(',')}) AND summary ~ "\\"Bugs List\\""`;
-                    
-                    if (selectedParent !== 'All') {
-                        qcListJql += ` AND ("Epic Link" = "${selectedParent}" OR parent = "${selectedParent}")`;
-                    }
-                    
-                    try {
-                        const qcRes = await fetchWithJiraAuth(`https://api.atlassian.com/ex/jira/${jiraCloudId}/rest/api/3/search/jql`, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-                            body: JSON.stringify({ jql: qcListJql, maxResults: 100, fields: ["key"] })
-                        });
-                        if (qcRes.ok) {
-                            const qcData = await qcRes.json();
-                            if (qcData.issues && qcData.issues.length > 0) {
-                                parentTaskKeys = qcData.issues.map(iss => iss.key);
-                            }
-                        }
-                    } catch(e) {
-                        if (e.message === "JIRA_SESSION_EXPIRED") throw e;
-                    }
+                showToast('Locating [QC] Bugs List task...', 'loading');
+                let parentTaskKeys = [];
+                let qcTaskJql = `project in (${projectKeysInput.map(k => `"${k}"`).join(',')}) AND summary ~ "\"Bugs List\""`;
+                if (selectedParent !== 'All') {
+                    qcTaskJql += ` AND (parent = "${selectedParent}" OR "Epic Link" = "${selectedParent}")`;
+                }
 
-                    if (parentTaskKeys.length > 0) {
-                        jqlString = `parent in (${parentTaskKeys.map(k => `"${k}"`).join(',')}) AND issuetype in (Bug, "Bug/Defect", Improvement, Question, "Sub-task", "Sub-Bug") ORDER BY created DESC`;
-                    } else {
-                        if (selectedParent !== 'All') {
-                            jqlString = `("Epic Link" = "${selectedParent}" OR parent = "${selectedParent}") AND issuetype in (Bug, "Bug/Defect", Improvement, Question, "Sub-task", "Sub-Bug") ORDER BY created DESC`;
-                        } else {
-                            jqlString = `project in (${projectKeysInput.map(k => `"${k}"`).join(',')}) AND issuetype in (Bug, "Bug/Defect", Improvement, Question, "Sub-task", "Sub-Bug") ORDER BY created DESC`;
-                        }
+                try {
+                    const qcRes = await fetchWithJiraAuth(`https://api.atlassian.com/ex/jira/${jiraCloudId}/rest/api/3/search/jql`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                        body: JSON.stringify({ jql: qcTaskJql, maxResults: 100, fields: ["key"] })
+                    });
+                    if (qcRes.ok) {
+                        const qcData = await qcRes.json();
+                        const taskIssues = qcData.issues || qcData.values || [];
+                        parentTaskKeys = taskIssues.map(iss => iss.key);
                     }
+                } catch (e) { }
+
+                let jqlString = '';
+                if (parentTaskKeys.length > 0) {
+                    jqlString = `parent in (${parentTaskKeys.map(k => `"${k}"`).join(',')}) ORDER BY created DESC`;
                 } else {
-                    jqlString = `project in (${projectKeysInput.map(k => `"${k}"`).join(',')}) AND issuetype in (Bug, "Bug/Defect", Improvement, Question)`;
-                    if (boardPrefix) {
-                        jqlString += ` AND text ~ "${boardPrefix}"`;
+                    jqlString = `project in (${projectKeysInput.map(k => `"${k}"`).join(',')}) AND issuetype in (Bug, "Bug/Defect", Improvement, Question, "Sub-task", "Sub-Bug")`;
+                    if (selectedParent !== 'All') {
+                        jqlString += ` AND (parent = "${selectedParent}" OR "Epic Link" = "${selectedParent}")`;
                     }
-                    if (selectedParent !== 'All') jqlString += ` AND (parent = "${selectedParent}" OR "Epic Link" = "${selectedParent}")`;
-                    if (selectedSprint !== 'All') jqlString += ` AND sprint = ${selectedSprint}`;
+                    if (selectedSprint !== 'All') {
+                        jqlString += ` AND sprint = ${selectedSprint}`;
+                    }
                     jqlString += ` ORDER BY created DESC`;
                 }
 
@@ -1322,7 +1256,9 @@ export default function App() {
                     if (checkedJiraPending[statusName]) { pendingCount++; pendingStatusesFound.add(statusName); }
                     
                     let issueTypeName = (issue.fields.issuetype && issue.fields.issuetype.name) ? issue.fields.issuetype.name.toUpperCase().trim() : '';
-                    if (issueTypeName === 'BUG/DEFECT' || issueTypeName === 'SUB-TASK' || issueTypeName === 'SUB-BUG') issueTypeName = 'BUG';
+                    if (issueTypeName === 'BUG/DEFECT' || issueTypeName === 'SUB-TASK' || issueTypeName === 'SUB-BUG') {
+                        issueTypeName = 'BUG';
+                    }
 
                     totalBoardTickets++;
                     if (typeContainers[issueTypeName] === undefined) return;
@@ -1335,8 +1271,15 @@ export default function App() {
                     }
                     if (isValidStatus) {
                         const summary = issue.fields.summary || '';
-                        const bracketMatch = summary.match(/\[([^\]]+)\]/);
-                        const tag = bracketMatch ? bracketMatch[1].trim().toUpperCase() : 'OTHERS';
+                        const matches = Array.from(summary.matchAll(/\[([^\]]+)\]/g));
+                        let tag = 'OTHERS';
+                        if (matches.length > 0) {
+                            tag = matches[0][1].trim().toUpperCase();
+                            if (jiraTagsList.length > 0) {
+                                const matchedKnownTag = matches.find(m => checkedJiraTagsMap[m[1].trim().toUpperCase()]);
+                                if (matchedKnownTag) tag = matchedKnownTag[1].trim().toUpperCase();
+                            }
+                        }
 
                         if (jiraTagsList.length > 0 && !checkedJiraTagsMap[tag]) {
                             return; 
@@ -1445,11 +1388,7 @@ export default function App() {
                 if (jiraBody.trim().length > 0) jiraReportSegment = "B. [TICKETS]\n" + jiraBody;
             } catch (error) {
                 hideLoadingToast();
-                if (error.message === "JIRA_SESSION_EXPIRED") {
-                    handleJiraDisconnect();
-                } else {
-                    showToast("Jira Error: " + error.message, 'error');
-                }
+                showToast("Jira Error: " + error.message, 'error');
                 return;
             }
 
@@ -1605,24 +1544,24 @@ export default function App() {
                 <div className="flex items-center gap-4">
                     
                     {workspaces.length > 0 && jiraToken && (
-                        <div className="flex items-center gap-2">
-                            <label className="text-xs font-semibold text-slate-600">Workspace:</label>
-                            <select 
-                                value={jiraCloudId || ''} 
-                                onChange={e => {
-                                    const newCloudId = e.target.value;
-                                    setJiraCloudId(newCloudId);
-                                    localStorage.setItem('jira_cloud_id', newCloudId);
-                                    showToast("Switched Jira Workspace", 'success');
-                                }}
-                                className="h-10 px-3 bg-white border border-slate-300 rounded-xl text-xs font-medium text-slate-800 focus:outline-none focus:border-indigo-600 shadow-sm"
-                            >
-                                {workspaces.map(ws => (
-                                    <option key={ws.id} value={ws.id}>
+                        <div className="flex items-center gap-1.5 bg-slate-200/80 p-1 rounded-2xl border border-slate-300">
+                            {workspaces.map(ws => {
+                                const isActive = (jiraCloudId === ws.id);
+                                return (
+                                    <button 
+                                        key={ws.id}
+                                        type="button"
+                                        onClick={() => {
+                                            setJiraCloudId(ws.id);
+                                            localStorage.setItem('jira_cloud_id', ws.id);
+                                            showToast(`Switched to workspace: ${ws.name}`, 'success');
+                                        }}
+                                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${isActive ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
+                                    >
                                         {ws.name} ({extractDomain(ws.url)})
-                                    </option>
-                                ))}
-                            </select>
+                                    </button>
+                                );
+                            })}
                         </div>
                     )}
 
@@ -1632,7 +1571,7 @@ export default function App() {
                             {jiraToken && jiraCloudId ? "Jira Connected" : "Jira Disconnected"}
                         </span>
                         {jiraToken && jiraCloudId ? (
-                            <button onClick={() => handleJiraDisconnect()} className="text-xs px-3 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl border border-slate-300 transition-all">
+                            <button onClick={handleJiraDisconnect} className="text-xs px-3 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl border border-slate-300 transition-all">
                                 Disconnect
                             </button>
                         ) : (
@@ -1647,24 +1586,6 @@ export default function App() {
             <main className="w-full grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
 
                 <section className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm flex flex-col gap-4">
-                    
-                    <div className="flex items-center gap-4 bg-slate-50 p-1 rounded-xl border border-slate-200 w-fit mb-2">
-                        <button
-                            type="button"
-                            onClick={() => setWorkspaceMode('old')}
-                            className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-all ${workspaceMode === 'old' ? 'bg-white shadow-sm text-indigo-700 border border-slate-200' : 'text-slate-500 hover:text-slate-700'}`}
-                        >
-                            Old Board (Text Filter)
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => setWorkspaceMode('new')}
-                            className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-all ${workspaceMode === 'new' ? 'bg-white shadow-sm text-indigo-700 border border-slate-200' : 'text-slate-500 hover:text-slate-700'}`}
-                        >
-                            New Board (Sub-tasks)
-                        </button>
-                    </div>
-
                     <h2 className="text-sm font-bold text-slate-800 tracking-wide flex items-center gap-2">
                         <span className="w-2 h-2 rounded-full bg-indigo-600"></span>
                         <span>Project Details</span>
@@ -1708,17 +1629,17 @@ export default function App() {
 
                     <div className="grid grid-cols-2 gap-3">
                         <div className="flex flex-col gap-1.5">
+                            <label className="text-xs font-semibold text-slate-600">Epic Filter</label>
+                            <select value={selectedParent} onChange={e => setSelectedParent(e.target.value)} className="h-10 px-3 bg-slate-50 border border-slate-300 rounded-xl text-xs font-medium text-slate-800 focus:outline-none focus:border-indigo-600">
+                                <option value="All">Default (All Epics)</option>
+                                {jiraParents.map(p => <option key={p.key} value={p.key}>{p.name} ({p.key})</option>)}
+                            </select>
+                        </div>
+                        <div className="flex flex-col gap-1.5">
                             <label className="text-xs font-semibold text-slate-600">Sprint Filter</label>
                             <select value={selectedSprint} onChange={e => setSelectedSprint(e.target.value)} className="h-10 px-3 bg-slate-50 border border-slate-300 rounded-xl text-xs font-medium text-slate-800 focus:outline-none focus:border-indigo-600">
                                 <option value="All">Default</option>
                                 {jiraSprints.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                            </select>
-                        </div>
-                        <div className="flex flex-col gap-1.5">
-                            <label className="text-xs font-semibold text-slate-600">Epic Filter</label>
-                            <select value={selectedParent} onChange={e => setSelectedParent(e.target.value)} className="h-10 px-3 bg-slate-50 border border-slate-300 rounded-xl text-xs font-medium text-slate-800 focus:outline-none focus:border-indigo-600">
-                                <option value="All">Default</option>
-                                {jiraParents.map(p => <option key={p.key} value={p.key}>{p.name} ({p.key})</option>)}
                             </select>
                         </div>
                     </div>
@@ -1821,7 +1742,7 @@ export default function App() {
                                     {statusPillList.map(s => {
                                         const isChecked = !!checkedJiraUnverified[s];
                                         return (
-                                            <div key={s} onClick={() => setCheckedJiraUnverified(p => ({ ...p, [s]: !isChecked }))} className={`px-2 py-1 rounded-lg border flex items-center justify-between cursor-pointer transition-all ${isChecked ? 'bg-amber-50 border-amber-300 text-amber-800' : 'bg-white border-slate-200 text-slate-600'}`}>
+                                            <div key={s} onClick={() => setCheckedJiraUnverified(p => ({ ...p, [s]: !isChecked }))} className={`px-2 py-1.5 rounded-lg border flex items-center justify-between cursor-pointer transition-all ${isChecked ? 'bg-amber-50 border-amber-300 text-amber-800' : 'bg-white border-slate-200 text-slate-600'}`}>
                                                 <span className="text-[10px] font-semibold truncate">{s}</span>
                                                 <span className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center text-[8px] font-bold ${isChecked ? 'bg-amber-500 text-white border-amber-500' : 'bg-white border-slate-300'}`}>{isChecked ? '✓' : ''}</span>
                                             </div>
@@ -1841,7 +1762,7 @@ export default function App() {
                                     {statusPillList.map(s => {
                                         const isChecked = !!checkedJiraPending[s];
                                         return (
-                                            <div key={s} onClick={() => setCheckedJiraPending(p => ({ ...p, [s]: !isChecked }))} className={`px-2 py-1 rounded-lg border flex items-center justify-between cursor-pointer transition-all ${isChecked ? 'bg-indigo-50 border-indigo-300 text-indigo-700' : 'bg-white border-slate-200 text-slate-600'}`}>
+                                            <div key={s} onClick={() => setCheckedJiraPending(p => ({ ...p, [s]: !isChecked }))} className={`px-2 py-1.5 rounded-lg border flex items-center justify-between cursor-pointer transition-all ${isChecked ? 'bg-indigo-50 border-indigo-300 text-indigo-700' : 'bg-white border-slate-200 text-slate-600'}`}>
                                                 <span className="text-[10px] font-semibold truncate">{s}</span>
                                                 <span className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center text-[8px] font-bold ${isChecked ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white border-slate-300'}`}>{isChecked ? '✓' : ''}</span>
                                             </div>
