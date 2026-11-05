@@ -216,6 +216,7 @@ export default function App() {
             ...options,
             headers: { ...options.headers, 'Authorization': `Bearer ${currentToken}` }
         });
+        
         if (res.status === 401) {
             try {
                 currentToken = await refreshJiraToken();
@@ -223,6 +224,9 @@ export default function App() {
                     ...options,
                     headers: { ...options.headers, 'Authorization': `Bearer ${currentToken}` }
                 });
+                if (res.status === 401) {
+                    throw new Error("Refreshed token is still unauthorized");
+                }
             } catch (err) {
                 handleJiraDisconnect();
                 throw new Error("Jira session expired. Please Connect SSO again.");
@@ -509,14 +513,15 @@ export default function App() {
                     const initialBoardId = exactBoard ? exactBoard.id : fetchedBoards[0].id;
                     setSelectedBoardId(initialBoardId);
                     
-                    try {
-                        const sRes = await fetchWithJiraAuth(`https://api.atlassian.com/ex/jira/${jiraCloudId}/rest/agile/1.0/board/${initialBoardId}/sprint?state=active,future`, { headers: { 'Accept': 'application/json' } });
-                        if (sRes.ok) {
-                            const sData = await sRes.json();
-                            sData.values?.forEach(sp => sprintsMap.set(sp.id, sp.name));
-                        }
-                    } catch (e) {}
-
+                    if (workspaceMode === 'old') {
+                        try {
+                            const sRes = await fetchWithJiraAuth(`https://api.atlassian.com/ex/jira/${jiraCloudId}/rest/agile/1.0/board/${initialBoardId}/sprint?state=active,future`, { headers: { 'Accept': 'application/json' } });
+                            if (sRes.ok) {
+                                const sData = await sRes.json();
+                                sData.values?.forEach(sp => sprintsMap.set(sp.id, sp.name));
+                            }
+                        } catch (e) {}
+                    }
                 } else {
                     throw new Error(`Project Key does not exist or access denied: ${key}`);
                 }
@@ -1159,15 +1164,49 @@ export default function App() {
                     boardPrefix = matchedBoard.name.split('-')[0].trim();
                 }
 
-                let jqlString = `project in (${projectKeysInput.map(k => `"${k}"`).join(',')}) AND issuetype in (Bug, "Bug/Defect", Improvement, Question${workspaceMode === 'new' ? ', "Sub-task", "Sub-Bug"' : ''})`;
+                let jqlString = '';
                 
-                if (workspaceMode === 'old' && boardPrefix) {
-                    jqlString += ` AND text ~ "${boardPrefix}"`;
-                }
+                if (workspaceMode === 'new') {
+                    let parentTaskKeys = [];
+                    showToast('Finding [QC] Bugs List task...', 'loading');
+                    let qcListJql = `project in (${projectKeysInput.map(k => `"${k}"`).join(',')}) AND summary ~ "\\"Bugs List\\""`;
+                    
+                    if (selectedParent !== 'All') {
+                        qcListJql += ` AND ("Epic Link" = "${selectedParent}" OR parent = "${selectedParent}")`;
+                    }
+                    
+                    try {
+                        const qcRes = await fetchWithJiraAuth(`https://api.atlassian.com/ex/jira/${jiraCloudId}/rest/api/3/search/jql`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                            body: JSON.stringify({ jql: qcListJql, maxResults: 100, fields: ["key"] })
+                        });
+                        if (qcRes.ok) {
+                            const qcData = await qcRes.json();
+                            if (qcData.issues && qcData.issues.length > 0) {
+                                parentTaskKeys = qcData.issues.map(iss => iss.key);
+                            }
+                        }
+                    } catch(e) {}
 
-                if (selectedParent !== 'All') jqlString += ` AND (parent = "${selectedParent}" OR "Epic Link" = "${selectedParent}")`;
-                if (selectedSprint !== 'All') jqlString += ` AND sprint = ${selectedSprint}`;
-                jqlString += ` ORDER BY created DESC`;
+                    if (parentTaskKeys.length > 0) {
+                        jqlString = `parent in (${parentTaskKeys.map(k => `"${k}"`).join(',')}) AND issuetype in (Bug, "Bug/Defect", Improvement, Question, "Sub-task", "Sub-Bug") ORDER BY created DESC`;
+                    } else {
+                        if (selectedParent !== 'All') {
+                            jqlString = `("Epic Link" = "${selectedParent}" OR parent = "${selectedParent}") AND issuetype in (Bug, "Bug/Defect", Improvement, Question, "Sub-task", "Sub-Bug") ORDER BY created DESC`;
+                        } else {
+                            jqlString = `project in (${projectKeysInput.map(k => `"${k}"`).join(',')}) AND issuetype in (Bug, "Bug/Defect", Improvement, Question, "Sub-task", "Sub-Bug") ORDER BY created DESC`;
+                        }
+                    }
+                } else {
+                    jqlString = `project in (${projectKeysInput.map(k => `"${k}"`).join(',')}) AND issuetype in (Bug, "Bug/Defect", Improvement, Question)`;
+                    if (boardPrefix) {
+                        jqlString += ` AND text ~ "${boardPrefix}"`;
+                    }
+                    if (selectedParent !== 'All') jqlString += ` AND (parent = "${selectedParent}" OR "Epic Link" = "${selectedParent}")`;
+                    if (selectedSprint !== 'All') jqlString += ` AND sprint = ${selectedSprint}`;
+                    jqlString += ` ORDER BY created DESC`;
+                }
 
                 const issueMap = new Map();
                 let jHasMore = true;
@@ -1983,7 +2022,7 @@ export default function App() {
                         </div>
                         <div className="px-6 py-4 border-t border-slate-200 flex justify-end gap-3 bg-slate-50">
                             <button type="button" onClick={() => { executeCopy(); setIsPreviewOpen(false); }} className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl shadow-md transition-all flex items-center gap-1.5">
-                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" /></svg>
+                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" /></svg>
                                 <span>Copy to Clipboard</span>
                             </button>
                         </div>
