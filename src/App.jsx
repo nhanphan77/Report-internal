@@ -95,8 +95,6 @@ export default function App() {
 
     const [availableProjects, setAvailableProjects] = useState([]);
     const [availableSheetTabs, setAvailableSheetTabs] = useState([]);
-    const [availableBoards, setAvailableBoards] = useState([]);
-    const [selectedBoardId, setSelectedBoardId] = useState('');
     const [workspaces, setWorkspaces] = useState(() => JSON.parse(localStorage.getItem('jira_workspaces')) || []);
     const [jiraToken, setJiraToken] = useState(() => localStorage.getItem('jira_access_token') || null);
     const [jiraRefreshToken, setJiraRefreshToken] = useState(() => localStorage.getItem('jira_refresh_token') || null);
@@ -142,9 +140,7 @@ export default function App() {
 
     // Classic Filters
     const [jiraParents, setJiraParents] = useState([]);
-    const [jiraSprints, setJiraSprints] = useState([]);
     const [selectedParent, setSelectedParent] = useState('All');
-    const [selectedSprint, setSelectedSprint] = useState('All');
 
     // Hierarchical Filters
     const [epicOptions, setEpicOptions] = useState([]);
@@ -200,8 +196,6 @@ export default function App() {
         setJiraRefreshToken(null);
         setJiraCloudId(null);
         setAvailableProjects([]);
-        setAvailableBoards([]);
-        setJiraSprints([]);
         setJiraParents([]);
         setEpicOptions([]);
         setEpicTasksList([]);
@@ -277,14 +271,11 @@ export default function App() {
         }
     }, [jiraCloudId, authTrigger]);
 
-    // Hàm cập nhật trạng thái thông minh vào các nhóm B, Unverified, Pending
+    // Đồng bộ trạng thái vào các nhóm
     const registerStatusesToFilters = (newStatuses) => {
         if (!newStatuses || newStatuses.length === 0) return;
         
-        setJiraStatuses(prev => {
-            const combined = Array.from(new Set([...prev, ...newStatuses]));
-            return combined;
-        });
+        setJiraStatuses(prev => Array.from(new Set([...prev, ...newStatuses])));
 
         setCheckedJiraB(prev => {
             const next = { ...prev };
@@ -344,7 +335,6 @@ export default function App() {
                     registerStatusesToFilters(foundStatuses);
                 }
 
-                // Cập nhật tag từ summary [Tag]
                 const foundTags = new Set();
                 items.forEach(iss => {
                     const summary = iss.fields?.summary || '';
@@ -420,7 +410,6 @@ export default function App() {
                 }));
                 setEpicTasksList(tasks);
 
-                // Ưu tiên chọn task [QC] Bugs List
                 const qcBugTask = tasks.find(t => t.summary.toLowerCase().includes('[qc] bugs list') || t.summary.toLowerCase().includes('bugs list'));
                 if (qcBugTask) {
                     setSelectedTaskKey(qcBugTask.value);
@@ -475,9 +464,7 @@ export default function App() {
                 if (state.checkedJiraStatuses_Unverified) setCheckedJiraUnverified(state.checkedJiraStatuses_Unverified);
                 if (state.checkedJiraStatuses_Pending) setCheckedJiraPending(state.checkedJiraStatuses_Pending);
                 if (Array.isArray(state.jiraParents)) setJiraParents(state.jiraParents);
-                if (Array.isArray(state.jiraSprints)) setJiraSprints(state.jiraSprints);
                 if (state.selectedParent) setSelectedParent(state.selectedParent);
-                if (state.selectedSprint) setSelectedSprint(state.selectedSprint);
                 if (Array.isArray(state.availableSheetTabs)) setAvailableSheetTabs(state.availableSheetTabs);
                 if (state.selectedEpicKey) setSelectedEpicKey(state.selectedEpicKey);
                 if (state.selectedTaskKey) setSelectedTaskKey(state.selectedTaskKey);
@@ -546,7 +533,7 @@ export default function App() {
             qcNames, testingStatus, chkCustomNote, customNotes: customNotesData, chkCustomIframe, customIframesData, chkWebapp, chkApptek, chkPreprod, linkShared, linkPreprod,
             scopesList, checkedScopes: checkedScopesMap, jiraStatusesList: jiraStatuses, checkedJiraStatuses_B: checkedJiraB,
             checkedJiraStatuses_Unverified: checkedJiraUnverified, checkedJiraStatuses_Pending: checkedJiraPending,
-            jiraParents, jiraSprints, selectedParent, selectedSprint,
+            jiraParents, selectedParent,
             jiraTagsList, checkedJiraTagsMap, availableSheetTabs,
             selectedEpicKey, selectedTaskKey
         };
@@ -555,7 +542,7 @@ export default function App() {
         sheetName, sheetTabName, dateReport, customReportName, versionGame, dateGame, versionApp, dateApp,
         qcNames, testingStatus, chkCustomNote, customNotesData, chkCustomIframe, customIframesData, chkWebapp, chkApptek, chkPreprod, linkShared, linkPreprod,
         scopesList, checkedScopesMap, jiraStatuses, checkedJiraB, checkedJiraUnverified, checkedJiraPending,
-        jiraParents, jiraSprints, selectedParent, selectedSprint,
+        jiraParents, selectedParent,
         jiraTagsList, checkedJiraTagsMap, availableSheetTabs,
         selectedEpicKey, selectedTaskKey
     ]);
@@ -674,11 +661,9 @@ export default function App() {
         try {
             const keys = projectKeysStr.split(',').map(k => k.trim()).filter(Boolean);
             const statusSet = new Set();
-            const sprintsMap = new Map();
             const parentsMap = new Map();
 
             for (const key of keys) {
-                // 1. Lấy toàn bộ status từ mọi issueType (bao gồm cả Sub-task)
                 try {
                     const targetUrl = `https://api.atlassian.com/ex/jira/${jiraCloudId}/rest/api/2/project/${key}/statuses`;
                     const res = await fetchWithJiraAuth(targetUrl, { headers: { 'Accept': 'application/json' } });
@@ -694,33 +679,6 @@ export default function App() {
                     }
                 } catch (e) { }
 
-                // 2. Chỉ gọi Agile Board API khi đang ở Classic Mode (Tránh 401 khi ở Tree Mode)
-                if (activeTabMode === 'classic') {
-                    try {
-                        const bRes = await fetchWithJiraAuth(`https://api.atlassian.com/ex/jira/${jiraCloudId}/rest/agile/1.0/board?projectKeyOrId=${key}`, { headers: { 'Accept': 'application/json' } });
-                        if (bRes.ok) {
-                            const bData = await bRes.json();
-                            if (bData && bData.values && bData.values.length > 0) {
-                                const fetchedBoards = bData.values.map(b => ({ id: b.id, name: b.name }));
-                                setAvailableBoards(fetchedBoards);
-                                const initialBoardId = fetchedBoards[0].id;
-                                setSelectedBoardId(initialBoardId);
-
-                                try {
-                                    const sRes = await fetchWithJiraAuth(`https://api.atlassian.com/ex/jira/${jiraCloudId}/rest/agile/1.0/board/${initialBoardId}/sprint`, { headers: { 'Accept': 'application/json' } });
-                                    if (sRes.ok) {
-                                        const sData = await sRes.json();
-                                        sData.values?.forEach(s => sprintsMap.set(s.id, s.name));
-                                    }
-                                } catch (e) { }
-                            }
-                        }
-                    } catch (e) {
-                        console.warn("Agile board API not accessible, ignoring:", e.message);
-                    }
-                }
-
-                // 3. Lấy Epics cho bộ lọc
                 try {
                     const eRes = await fetchWithJiraAuth(`https://api.atlassian.com/ex/jira/${jiraCloudId}/rest/api/3/search/jql`, {
                         method: 'POST',
@@ -734,12 +692,10 @@ export default function App() {
                 } catch (e) { }
             }
 
-            // Đăng ký toàn bộ status tìm được vào các bộ lọc
             if (statusSet.size > 0) {
                 registerStatusesToFilters(Array.from(statusSet));
             }
 
-            setJiraSprints(Array.from(sprintsMap.entries()).map(([id, name]) => ({ id, name })));
             setJiraParents(Array.from(parentsMap.entries()).map(([key, name]) => ({ key, name })));
 
             if (!isAuto) {
@@ -757,29 +713,8 @@ export default function App() {
         syncEpicsForProject(sheetName.trim());
     };
 
-    const handleBoardChange = async (newBoardId) => {
-        setSelectedBoardId(newBoardId);
-        if (!newBoardId || !jiraCloudId) return;
-
-        showToast('Loading sprints for selected board...', 'loading');
-        try {
-            const sRes = await fetchWithJiraAuth(`https://api.atlassian.com/ex/jira/${jiraCloudId}/rest/agile/1.0/board/${newBoardId}/sprint`, { headers: { 'Accept': 'application/json' } });
-            if (sRes.ok) {
-                const sData = await sRes.json();
-                const sList = sData.values?.map(s => ({ id: s.id, name: s.name })) || [];
-                setJiraSprints(sList);
-                setSelectedSprint('All'); 
-                hideLoadingToast();
-                showToast('Loaded sprints for board!', 'success');
-            }
-        } catch (err) {
-            hideLoadingToast();
-            setJiraSprints([]);
-        }
-    };
-
     const toggleAllJiraCategory = (category, selectAll) => {
-        const targetList = jiraStatuses.length > 0 ? jiraStatuses : ['TODO', 'IN PROGRESS', 'FIXEDDONE'];
+        const targetList = jiraStatuses.length > 0 ? jiraStatuses : ['TODO', 'IN PROGRESS', 'FIXEDDONE', 'CLOSED'];
         const newMap = {};
         targetList.forEach(s => { newMap[s] = selectAll; });
         if (category === 'B') setCheckedJiraB(newMap);
@@ -1278,6 +1213,7 @@ export default function App() {
                 let finalJql = "";
 
                 if (activeTabMode === 'hierarchy') {
+                    // Tree Mode: Lấy thẳng sub-task con của Task [QC] Bugs List
                     finalJql = `parent = "${selectedTaskKey}" AND issuetype in (Bug, "Bug/Defect", Improvement, Question, Sub-task) ORDER BY created DESC`;
 
                     if (selectedEpicKey) {
@@ -1285,22 +1221,8 @@ export default function App() {
                         if (ep) targetName = ep.label.replace(/\s*\([^)]*\)$/, '');
                     }
                 } else {
-                    let boardId = selectedBoardId;
-                    const matchedBoard = availableBoards.find(b => b.id == boardId);
-                    if (matchedBoard) {
-                        targetName = matchedBoard.name; 
-                    }
-
                     let jqlString = `issuetype in (Bug, "Bug/Defect", Improvement, Question)`;
                     if (selectedParent !== 'All') jqlString += ` AND (parent = "${selectedParent}" OR "Epic Link" = "${selectedParent}")`;
-                    
-                    if (selectedSprint !== 'All') {
-                        jqlString += ` AND sprint = ${selectedSprint}`;
-                    } else if (jiraSprints.length > 0) {
-                        const allSprintIds = jiraSprints.map(s => s.id).join(',');
-                        jqlString += ` AND sprint in (${allSprintIds})`;
-                    }
-                    
                     jqlString += ` ORDER BY created DESC`;
                     finalJql = `project in (${projectKeysInput.map(k => `"${k}"`).join(',')}) AND ${jqlString}`;
                 }
@@ -1325,7 +1247,7 @@ export default function App() {
 
                     if (!res.ok) {
                         hideLoadingToast();
-                        alert(`❌ FAILED TO GENERATE:\n\nLỗi khi truy vấn Jira (Mã lỗi: ${res.status}).`);
+                        alert(`❌ FAILED TO GENERATE:\n\nLỗi khi truy vấn Jira (Mã lỗi: ${res.status}). Vui lòng kiểm tra lại Task Target hoặc Project Key.`);
                         return;
                     }
 
@@ -1343,12 +1265,7 @@ export default function App() {
                 const currentWorkspace = workspaces.find(ws => ws.id === jiraCloudId);
                 const baseUrl = currentWorkspace ? currentWorkspace.url : `https://enotion.atlassian.net`;
                 const pathPrefix = (projectStyle === 'classic') ? '/jira/software/c/projects' : '/jira/software/projects';
-
-                if (selectedBoardId) {
-                    autoJiraLink = `${baseUrl}${pathPrefix}/${realKey}/boards/${selectedBoardId}`;
-                } else {
-                    autoJiraLink = `${baseUrl}${pathPrefix}/${realKey}/boards`;
-                }
+                autoJiraLink = `${baseUrl}${pathPrefix}/${realKey}/boards`;
 
                 const typeContainers = { 'BUG': {}, 'IMPROVEMENT': {}, 'QUESTION': {} };
                 let totalBoardTickets = 0;
@@ -1451,7 +1368,6 @@ export default function App() {
                     } else {
                         let hasTickets = false;
                         const priorityMapForType = {}; 
-                        let totalInType = 0;
                         
                         for (const tag in typeContainers[typeKey]) {
                             for (const priority in typeContainers[typeKey][tag]) {
@@ -1460,7 +1376,6 @@ export default function App() {
                                     hasTickets = true;
                                     if (!priorityMapForType[priority]) priorityMapForType[priority] = [];
                                     priorityMapForType[priority] = priorityMapForType[priority].concat(tix);
-                                    totalInType += tix.length;
                                 }
                             }
                         }
@@ -1775,36 +1690,13 @@ export default function App() {
                             </div>
                         </div>
                     ) : (
-                        <>
-                            {availableBoards.length > 0 && (
-                                <div className="flex flex-col gap-1.5 mt-2 bg-indigo-50/50 p-3 rounded-xl border border-indigo-100">
-                                    <label className="text-xs font-bold text-indigo-700">Select Specific Board (Studio/Game)</label>
-                                    <SearchableDropdown
-                                        options={availableBoards.map(b => ({ value: b.id, label: b.name }))}
-                                        value={selectedBoardId}
-                                        onChange={handleBoardChange}
-                                        placeholder="Search and select a board..."
-                                    />
-                                </div>
-                            )}
-
-                            <div className="grid grid-cols-2 gap-3">
-                                <div className="flex flex-col gap-1.5">
-                                    <label className="text-xs font-semibold text-slate-600">Sprint Filter</label>
-                                    <select value={selectedSprint} onChange={e => setSelectedSprint(e.target.value)} className="h-10 px-3 bg-slate-50 border border-slate-300 rounded-xl text-xs font-medium text-slate-800 focus:outline-none focus:border-indigo-600">
-                                        <option value="All">Default</option>
-                                        {jiraSprints.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                                    </select>
-                                </div>
-                                <div className="flex flex-col gap-1.5">
-                                    <label className="text-xs font-semibold text-slate-600">Epic Filter</label>
-                                    <select value={selectedParent} onChange={e => setSelectedParent(e.target.value)} className="h-10 px-3 bg-slate-50 border border-slate-300 rounded-xl text-xs font-medium text-slate-800 focus:outline-none focus:border-indigo-600">
-                                        <option value="All">Default</option>
-                                        {jiraParents.map(p => <option key={p.key} value={p.key}>{p.name} ({p.key})</option>)}
-                                    </select>
-                                </div>
-                            </div>
-                        </>
+                        <div className="flex flex-col gap-1.5">
+                            <label className="text-xs font-semibold text-slate-600">Epic Filter</label>
+                            <select value={selectedParent} onChange={e => setSelectedParent(e.target.value)} className="h-10 px-3 bg-slate-50 border border-slate-300 rounded-xl text-xs font-medium text-slate-800 focus:outline-none focus:border-indigo-600">
+                                <option value="All">Default</option>
+                                {jiraParents.map(p => <option key={p.key} value={p.key}>{p.name} ({p.key})</option>)}
+                            </select>
+                        </div>
                     )}
 
                     <div className="grid grid-cols-2 gap-3">
