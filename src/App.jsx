@@ -3,10 +3,6 @@ import './App.css';
 
 const GOOGLE_CLIENT_ID = "149310433677-4qv9hp52p00s4csq1eb1trj23nsiu945.apps.googleusercontent.com";
 const ATLASSIAN_CLIENT_ID = "OULWq49W7enCX1cVWMFtRTlj2axvx0Ge";
-const JIRA_SITE_URL = "https://vvortech.atlassian.net";
-const JIRA_SITE_HOST = "vvortech.atlassian.net";
-const JIRA_PROJECT_KEY = "STR";
-const JIRA_BOARD_ID = "1951";
 
 const DEFAULT_SCOPES = [
     "Logic", "Logic UI", "Specific UI", "Interruption", "Sound",
@@ -43,7 +39,7 @@ const SearchableDropdown = React.forwardRef(({ options, value, onChange, placeho
         (opt.label || opt).toString().toLowerCase().includes(searchTerm.toLowerCase())
     );
 
-    const displayValue = options.find(opt => (opt.value || opt) === value);
+    const displayValue = options.find(opt => (opt.value !== undefined ? opt.value : opt) === value);
     const displayLabel = displayValue ? (displayValue.label || displayValue) : value;
 
     return (
@@ -51,7 +47,7 @@ const SearchableDropdown = React.forwardRef(({ options, value, onChange, placeho
             <div 
                 ref={ref}
                 tabIndex={0}
-                className={`h-10 px-3.5 bg-white border rounded-xl text-xs font-semibold text-slate-900 flex items-center justify-between cursor-pointer transition-all ${isError ? 'border-rose-500' : 'border-slate-300 hover:border-slate-400 focus:border-indigo-600 focus:ring-1 focus:ring-indigo-600 outline-none'}`}
+                className={`h-10 px-3.5 bg-white border rounded-xl text-xs font-semibold text-slate-900 flex items-center justify-between cursor-pointer transition-all ${isError ? 'border-rose-500 ring-1 ring-rose-500' : 'border-slate-300 hover:border-slate-400 focus:border-indigo-600 focus:ring-1 focus:ring-indigo-600 outline-none'}`}
                 onClick={() => { setIsOpen(!isOpen); setSearchTerm(''); }}
             >
                 <span className="truncate">{displayLabel || placeholder}</span>
@@ -95,7 +91,6 @@ const SearchableDropdown = React.forwardRef(({ options, value, onChange, placeho
 let refreshPromise = null;
 
 export default function App() {
-    // Mode switcher: 'classic' hoặc 'hierarchy'
     const [activeTabMode, setActiveTabMode] = useState(() => localStorage.getItem('qc_tool_mode') || 'hierarchy');
 
     const [availableProjects, setAvailableProjects] = useState([]);
@@ -110,7 +105,7 @@ export default function App() {
 
     const [authTrigger, setAuthTrigger] = useState(0);
 
-    const [sheetName, setSheetName] = useState(JIRA_PROJECT_KEY);
+    const [sheetName, setSheetName] = useState('');
     const [sheetTabName, setSheetTabName] = useState('');
     const [dateReport, setDateReport] = useState('');
     const [customReportName, setCustomReportName] = useState('');
@@ -151,7 +146,7 @@ export default function App() {
     const [selectedParent, setSelectedParent] = useState('All');
     const [selectedSprint, setSelectedSprint] = useState('All');
 
-    // Hierarchy Flow States (Trang mới)
+    // Hierarchical Filters
     const [epicOptions, setEpicOptions] = useState([]);
     const [selectedEpicKey, setSelectedEpicKey] = useState('');
     const [epicTasksList, setEpicTasksList] = useState([]);
@@ -228,14 +223,11 @@ export default function App() {
                 const data = await res.json();
                 if (!res.ok || data.error) throw new Error(data.error || 'Failed to refresh token');
                 
-                if (!data.access_token) throw new Error('Refresh response did not contain an access token');
-
-                const nextRefreshToken = data.refresh_token || storedRefreshToken;
                 setJiraToken(data.access_token);
-                setJiraRefreshToken(nextRefreshToken);
+                setJiraRefreshToken(data.refresh_token);
                 localStorage.setItem('jira_access_token', data.access_token);
-                localStorage.setItem('jira_refresh_token', nextRefreshToken);
-
+                localStorage.setItem('jira_refresh_token', data.refresh_token);
+                
                 return data.access_token;
             } finally {
                 refreshPromise = null;
@@ -247,49 +239,27 @@ export default function App() {
 
     const fetchWithJiraAuth = async (url, options = {}) => {
         let currentToken = localStorage.getItem('jira_access_token');
-        if (!currentToken) throw new Error('Jira is not connected. Please connect SSO.');
-
         let res = await fetch(url, {
             ...options,
-            headers: { ...options.headers, Authorization: `Bearer ${currentToken}` }
+            headers: { ...options.headers, 'Authorization': `Bearer ${currentToken}` }
         });
-
         if (res.status === 401) {
             try {
                 currentToken = await refreshJiraToken();
                 res = await fetch(url, {
                     ...options,
-                    headers: { ...options.headers, Authorization: `Bearer ${currentToken}` }
+                    headers: { ...options.headers, 'Authorization': `Bearer ${currentToken}` }
                 });
             } catch (err) {
-                const message = String(err?.message || '');
-                if (/invalid_grant|refresh token.*(expired|invalid|revoked)|no refresh token/i.test(message)) {
-                    handleJiraDisconnect();
-                    throw new Error('Jira refresh token is no longer valid. Please connect SSO again.');
-                }
-                throw new Error(`Could not refresh Jira session: ${message}`);
+                handleJiraDisconnect();
+                throw new Error("Jira session expired. Please Connect SSO again.");
             }
         }
-
         return res;
     };
 
     useEffect(() => {
         const currentToken = localStorage.getItem('jira_access_token');
-        const storedWorkspaces = JSON.parse(localStorage.getItem('jira_workspaces') || '[]');
-        const configuredWorkspace = storedWorkspaces.find(resource => {
-            try {
-                return new URL(resource.url).hostname.toLowerCase() === JIRA_SITE_HOST;
-            } catch {
-                return false;
-            }
-        });
-
-        if (configuredWorkspace && configuredWorkspace.id !== jiraCloudId) {
-            setJiraCloudId(configuredWorkspace.id);
-            localStorage.setItem('jira_cloud_id', configuredWorkspace.id);
-        }
-
         if (currentToken && jiraCloudId) {
             fetchWithJiraAuth(`https://api.atlassian.com/ex/jira/${jiraCloudId}/rest/api/2/project`, { headers: { 'Accept': 'application/json' } })
                 .then(res => {
@@ -307,7 +277,97 @@ export default function App() {
         }
     }, [jiraCloudId, authTrigger]);
 
-    // Đồng bộ danh sách Epics cho Project lớn được chọn
+    // Hàm cập nhật trạng thái thông minh vào các nhóm B, Unverified, Pending
+    const registerStatusesToFilters = (newStatuses) => {
+        if (!newStatuses || newStatuses.length === 0) return;
+        
+        setJiraStatuses(prev => {
+            const combined = Array.from(new Set([...prev, ...newStatuses]));
+            return combined;
+        });
+
+        setCheckedJiraB(prev => {
+            const next = { ...prev };
+            newStatuses.forEach(s => {
+                if (next[s] === undefined) {
+                    const cleanS = s.replace(/[^A-Z0-9]/g, '');
+                    next[s] = ['TODO', 'INPROGRESS', 'FIXEDDONE', 'FIXDONE', 'RESOLVED', 'CLOSED'].includes(cleanS);
+                }
+            });
+            return next;
+        });
+
+        setCheckedJiraUnverified(prev => {
+            const next = { ...prev };
+            newStatuses.forEach(s => {
+                if (next[s] === undefined) {
+                    const cleanS = s.replace(/[^A-Z0-9]/g, '');
+                    next[s] = ['DEPLOYED', 'INTESTING'].includes(cleanS);
+                }
+            });
+            return next;
+        });
+
+        setCheckedJiraPending(prev => {
+            const next = { ...prev };
+            newStatuses.forEach(s => {
+                if (next[s] === undefined) {
+                    const cleanS = s.replace(/[^A-Z0-9]/g, '');
+                    next[s] = ['PENDING', 'WAITFOR', 'WAITING'].some(p => cleanS.includes(p));
+                }
+            });
+            return next;
+        });
+    };
+
+    // Quét động status và tag thực tế của các sub-task trong [QC] Bugs List
+    const syncSubTaskMetadata = async (taskKey) => {
+        if (!taskKey || !jiraCloudId) return;
+        try {
+            const payload = {
+                jql: `parent = "${taskKey}"`,
+                maxResults: 150,
+                fields: ["status", "summary"]
+            };
+            const res = await fetchWithJiraAuth(`https://api.atlassian.com/ex/jira/${jiraCloudId}/rest/api/3/search/jql`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            if (res.ok) {
+                const data = await res.json();
+                const items = data.issues || data.values || [];
+                const foundStatuses = items.map(iss => iss.fields?.status?.name?.toUpperCase().trim()).filter(Boolean);
+                
+                if (foundStatuses.length > 0) {
+                    registerStatusesToFilters(foundStatuses);
+                }
+
+                // Cập nhật tag từ summary [Tag]
+                const foundTags = new Set();
+                items.forEach(iss => {
+                    const summary = iss.fields?.summary || '';
+                    const match = summary.match(/\[([^\]]+)\]/);
+                    if (match) foundTags.add(match[1].trim().toUpperCase());
+                });
+
+                if (foundTags.size > 0) {
+                    const tagArr = Array.from(foundTags);
+                    setJiraTagsList(prev => Array.from(new Set([...prev, ...tagArr])));
+                    setCheckedJiraTagsMap(prev => {
+                        const next = { ...prev };
+                        tagArr.forEach(t => { if (next[t] === undefined) next[t] = true; });
+                        return next;
+                    });
+                }
+            }
+        } catch (e) {
+            console.warn("Could not scan sub-task metadata:", e);
+        }
+    };
+
+    // Đồng bộ danh sách Epics cho Project lớn
     const syncEpicsForProject = async (projectKey) => {
         if (!jiraToken || !jiraCloudId || !projectKey) return;
         setIsLoadingEpics(true);
@@ -334,7 +394,7 @@ export default function App() {
         }
     };
 
-    // Khi chọn Epic, tự động load các Task con thuộc Epic (chủ yếu là [QC] Bugs List)
+    // Khi chọn Epic, quét ra các Task con (bao gồm [QC] Bugs List)
     const handleEpicSelect = async (epicKey) => {
         setSelectedEpicKey(epicKey);
         setSelectedTaskKey('');
@@ -360,12 +420,14 @@ export default function App() {
                 }));
                 setEpicTasksList(tasks);
 
-                // Ưu tiên tự động chọn Task có tên chứa [QC] Bugs List
+                // Ưu tiên chọn task [QC] Bugs List
                 const qcBugTask = tasks.find(t => t.summary.toLowerCase().includes('[qc] bugs list') || t.summary.toLowerCase().includes('bugs list'));
                 if (qcBugTask) {
                     setSelectedTaskKey(qcBugTask.value);
+                    syncSubTaskMetadata(qcBugTask.value);
                 } else if (tasks.length > 0) {
                     setSelectedTaskKey(tasks[0].value);
+                    syncSubTaskMetadata(tasks[0].value);
                 }
                 hideLoadingToast();
                 showToast("Loaded tasks for Epic!", 'success');
@@ -383,7 +445,7 @@ export default function App() {
         if (savedData) {
             try {
                 const state = JSON.parse(savedData);
-                setSheetName(JIRA_PROJECT_KEY);
+                if (state.sheetName) setSheetName(state.sheetName);
                 if (state.sheetTabName) setSheetTabName(state.sheetTabName);
                 if (state.dateReport) setDateReport(state.dateReport);
                 if (state.customReportName) setCustomReportName(state.customReportName);
@@ -451,22 +513,13 @@ export default function App() {
                     if (!resourcesRes.ok) throw new Error('Failed to fetch accessible resources');
                     const resourcesData = await resourcesRes.json();
                     
-                    const matchingWorkspace = resourcesData.find(resource => {
-                        try {
-                            return new URL(resource.url).hostname.toLowerCase() === JIRA_SITE_HOST;
-                        } catch {
-                            return false;
-                        }
-                    });
+                    setWorkspaces(resourcesData);
+                    localStorage.setItem('jira_workspaces', JSON.stringify(resourcesData));
 
-                    if (!matchingWorkspace) {
-                        throw new Error(`Your Atlassian account does not have access to ${JIRA_SITE_HOST}.`);
-                    }
-
-                    setWorkspaces([matchingWorkspace]);
-                    localStorage.setItem('jira_workspaces', JSON.stringify([matchingWorkspace]));
-                    setJiraCloudId(matchingWorkspace.id);
-                    localStorage.setItem('jira_cloud_id', matchingWorkspace.id);
+                    if (resourcesData.length > 0) {
+                        setJiraCloudId(resourcesData[0].id);
+                        localStorage.setItem('jira_cloud_id', resourcesData[0].id);
+                    }			
 
                     setJiraToken(data.access_token);
                     setJiraRefreshToken(data.refresh_token);
@@ -624,48 +677,50 @@ export default function App() {
             const sprintsMap = new Map();
             const parentsMap = new Map();
 
-            let initialBoardId = null;
-
             for (const key of keys) {
+                // 1. Lấy toàn bộ status từ mọi issueType (bao gồm cả Sub-task)
                 try {
                     const targetUrl = `https://api.atlassian.com/ex/jira/${jiraCloudId}/rest/api/2/project/${key}/statuses`;
                     const res = await fetchWithJiraAuth(targetUrl, { headers: { 'Accept': 'application/json' } });
                     if (res.ok) {
                         const data = await res.json();
                         data.forEach(issueType => {
-                            issueType.statuses.forEach(status => {
-                                statusSet.add(status.name.toUpperCase());
+                            issueType.statuses?.forEach(status => {
+                                if (status && status.name) {
+                                    statusSet.add(status.name.toUpperCase().trim());
+                                }
                             });
                         });
                     }
                 } catch (e) { }
 
-                const boardRes = await fetchWithJiraAuth(
-                    `https://api.atlassian.com/ex/jira/${jiraCloudId}/rest/agile/1.0/board/${JIRA_BOARD_ID}`,
-                    { headers: { Accept: 'application/json' } }
-                );
+                // 2. Chỉ gọi Agile Board API khi đang ở Classic Mode (Tránh 401 khi ở Tree Mode)
+                if (activeTabMode === 'classic') {
+                    try {
+                        const bRes = await fetchWithJiraAuth(`https://api.atlassian.com/ex/jira/${jiraCloudId}/rest/agile/1.0/board?projectKeyOrId=${key}`, { headers: { 'Accept': 'application/json' } });
+                        if (bRes.ok) {
+                            const bData = await bRes.json();
+                            if (bData && bData.values && bData.values.length > 0) {
+                                const fetchedBoards = bData.values.map(b => ({ id: b.id, name: b.name }));
+                                setAvailableBoards(fetchedBoards);
+                                const initialBoardId = fetchedBoards[0].id;
+                                setSelectedBoardId(initialBoardId);
 
-                if (!boardRes.ok) {
-                    throw new Error(`Cannot access Jira board ${JIRA_BOARD_ID} (HTTP ${boardRes.status}).`);
+                                try {
+                                    const sRes = await fetchWithJiraAuth(`https://api.atlassian.com/ex/jira/${jiraCloudId}/rest/agile/1.0/board/${initialBoardId}/sprint`, { headers: { 'Accept': 'application/json' } });
+                                    if (sRes.ok) {
+                                        const sData = await sRes.json();
+                                        sData.values?.forEach(s => sprintsMap.set(s.id, s.name));
+                                    }
+                                } catch (e) { }
+                            }
+                        }
+                    } catch (e) {
+                        console.warn("Agile board API not accessible, ignoring:", e.message);
+                    }
                 }
 
-                const boardData = await boardRes.json();
-                const configuredBoard = { id: JIRA_BOARD_ID, name: boardData.name || `Board ${JIRA_BOARD_ID}` };
-                setAvailableBoards([configuredBoard]);
-                initialBoardId = JIRA_BOARD_ID;
-                setSelectedBoardId(JIRA_BOARD_ID);
-
-                try {
-                    const sRes = await fetchWithJiraAuth(
-                        `https://api.atlassian.com/ex/jira/${jiraCloudId}/rest/agile/1.0/board/${JIRA_BOARD_ID}/sprint`,
-                        { headers: { Accept: 'application/json' } }
-                    );
-                    if (sRes.ok) {
-                        const sData = await sRes.json();
-                        sData.values?.forEach(s => sprintsMap.set(s.id, s.name));
-                    }
-                } catch (e) { }
-
+                // 3. Lấy Epics cho bộ lọc
                 try {
                     const eRes = await fetchWithJiraAuth(`https://api.atlassian.com/ex/jira/${jiraCloudId}/rest/api/3/search/jql`, {
                         method: 'POST',
@@ -679,91 +734,9 @@ export default function App() {
                 } catch (e) { }
             }
 
-            try {
-                let tagSet = new Set();
-                let jHasMore = true;
-                let currentToken = null;
-                const keysStr = keys.map(k => `"${k}"`).join(',');
-                const tagJql = `project in (${keysStr}) AND issuetype in (Bug, "Bug/Defect", Improvement, Question) ORDER BY created DESC`;
-                
-                while (jHasMore) {
-                    const payload = { jql: tagJql, maxResults: 100, fields: ["summary"] };
-                    if (currentToken) payload.nextPageToken = currentToken;
-                    
-                    const tRes = await fetchWithJiraAuth(`https://api.atlassian.com/ex/jira/${jiraCloudId}/rest/api/3/search/jql`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-                        body: JSON.stringify(payload)
-                    });
-                    
-                    if (tRes.ok) {
-                        const d = await tRes.json();
-                        const items = d.issues || d.values || [];
-                        items.forEach(iss => {
-                            const summary = iss.fields?.summary || '';
-                            const match = summary.match(/\[([^\]]+)\]/);
-                            if (match) tagSet.add(match[1].trim().toUpperCase());
-                        });
-                        
-                        if (d.nextPageToken && items.length > 0) currentToken = d.nextPageToken;
-                        else jHasMore = false;
-                    } else {
-                        jHasMore = false;
-                    }
-                }
-
-                if (tagSet.size > 0) {
-                    let list = Array.from(tagSet).sort();
-                    if (!list.includes('OTHERS')) list = ['OTHERS', ...list]; 
-                    
-                    setJiraTagsList(list);
-                    setCheckedJiraTagsMap(prev => {
-                        const next = { ...prev };
-                        list.forEach(t => { 
-                            if (next[t] === undefined) next[t] = true; 
-                        });
-                        return next;
-                    });
-                }
-            } catch (e) {
-                console.error("Error while loading tags:", e);
-            }
-
+            // Đăng ký toàn bộ status tìm được vào các bộ lọc
             if (statusSet.size > 0) {
-                const list = Array.from(statusSet);
-                setJiraStatuses(list);
-
-                setCheckedJiraB(prev => {
-                    const next = { ...prev };
-                    list.forEach(s => {
-                        if (next[s] === undefined) {
-                            const cleanS = s.replace(/[^A-Z0-9]/g, '');
-                            next[s] = ['TODO', 'INPROGRESS', 'FIXEDDONE', 'FIXDONE', 'RESOLVED'].includes(cleanS);
-                        }
-                    });
-                    return next;
-                });
-
-                setCheckedJiraUnverified(prev => {
-                    const next = { ...prev };
-                    list.forEach(s => {
-                        if (next[s] === undefined) {
-                            const cleanS = s.replace(/[^A-Z0-9]/g, '');
-                            next[s] = ['DEPLOYED', 'INTESTING'].includes(cleanS);
-                        }
-                    });
-                    return next;
-                });
-                setCheckedJiraPending(prev => {
-                    const next = { ...prev };
-                    list.forEach(s => {
-                        if (next[s] === undefined) {
-                            const cleanS = s.replace(/[^A-Z0-9]/g, '');
-                            next[s] = ['PENDING', 'WAITFOR', 'WAITING'].some(p => cleanS.includes(p));
-                        }
-                    });
-                    return next;
-                });
+                registerStatusesToFilters(Array.from(statusSet));
             }
 
             setJiraSprints(Array.from(sprintsMap.entries()).map(([id, name]) => ({ id, name })));
@@ -774,7 +747,6 @@ export default function App() {
                 showToast("Loaded Jira metadata successfully!", 'success');
             }
         } catch (err) {
-            setJiraStatuses([]);
             hideLoadingToast();
             showToast("Auto-sync failed: " + err.message, 'error');
         }
@@ -898,7 +870,7 @@ export default function App() {
             initiateJiraSSO();
             return;
         }
-        const projectKeysInput = [JIRA_PROJECT_KEY];
+        const projectKeysInput = sheetName.split(',').map(k => k.trim()).filter(Boolean);
         const qcNamesInput = qcNames.trim();
         const versionGameInput = versionGame.trim();
         const versionAppInput = versionApp.trim();
@@ -919,32 +891,16 @@ export default function App() {
         if (activeTabMode === 'hierarchy' && !selectedTaskKey) {
             errors.push("Target Task / [QC] Bugs List");
         }
- 
-        if (projectKeysInput.length > 0 && jiraStatuses.length === 0) {
-            errors.push("Sync Failed");
-        }	
 	
         setFormErrors(errors);
 
         if (errors.length > 0) {
-            if (errors.includes("Sync Failed")) {
-                showToast("Cannot generate: Jira sync failed. Please check the Project Key and try again.", 'error');
-                setFormErrors(prev => [...prev, "Project Key"]); 
-                if (projectKeyRef.current) projectKeyRef.current.focus(); 
-                return;
-            }
-
             showToast("Missing required fields: " + errors.join(', '), 'error');
             if (errors.includes("Project Key") && projectKeyRef.current) projectKeyRef.current.focus();
             else if (errors.includes("QC Team") && qcTeamRef.current) qcTeamRef.current.focus();
             else if (errors.includes("Game Version") && gameVersionRef.current) gameVersionRef.current.focus();
             else if (errors.includes("App Version") && appVersionRef.current) appVersionRef.current.focus();
             else if (errors.includes("Sheet Tab Name") && sheetTabNameRef.current) sheetTabNameRef.current.focus();
-            return;
-        }
-
-        if (jiraStatuses.length === 0) {
-            showToast("Cannot generate report: Jira data is not synced. Please check your Project Key and sync first.", 'error');
             return;
         }
 
@@ -1306,7 +1262,7 @@ export default function App() {
 
             try {
                 let targetName = projectKeysInput.join(', ');
-                let realKey = JIRA_PROJECT_KEY;
+                let realKey = projectKeysInput[0];
                 let projectStyle = '';
 
                 try {
@@ -1322,19 +1278,14 @@ export default function App() {
                 let finalJql = "";
 
                 if (activeTabMode === 'hierarchy') {
-                    // === MODE 2: CÁCH MỚI QUA CÂY [QC] BUGS LIST / TASK CON ===
-                    // Lọc tất cả Sub-task của Task được chọn (thường là [QC] Bugs List)
-                    let taskKeyTarget = selectedTaskKey;
-                    finalJql = `parent = "${taskKeyTarget}" AND issuetype in (Bug, "Bug/Defect", Improvement, Question, Sub-task) ORDER BY created DESC`;
+                    finalJql = `parent = "${selectedTaskKey}" AND issuetype in (Bug, "Bug/Defect", Improvement, Question, Sub-task) ORDER BY created DESC`;
 
-                    // Tìm kiếm tên task/epic để đặt tên header
                     if (selectedEpicKey) {
                         const ep = epicOptions.find(e => e.value === selectedEpicKey);
                         if (ep) targetName = ep.label.replace(/\s*\([^)]*\)$/, '');
                     }
                 } else {
-                    // === MODE 1: CÁCH HIỆN TẠI (GIỮ NGUYÊN) ===
-                    let boardId = JIRA_BOARD_ID;
+                    let boardId = selectedBoardId;
                     const matchedBoard = availableBoards.find(b => b.id == boardId);
                     if (matchedBoard) {
                         targetName = matchedBoard.name; 
@@ -1351,32 +1302,7 @@ export default function App() {
                     }
                     
                     jqlString += ` ORDER BY created DESC`;
-
-                    let boardFilterJql = "";
-                    if (boardId) {
-                        try {
-                            const boardConfigRes = await fetchWithJiraAuth(`https://api.atlassian.com/ex/jira/${jiraCloudId}/rest/agile/1.0/board/${boardId}/configuration`, { headers: { 'Accept': 'application/json' } });
-                            if (boardConfigRes.ok) {
-                                const boardConfig = await boardConfigRes.json();
-                                const filterId = boardConfig?.filter?.id;
-                                if (filterId) {
-                                    const filterRes = await fetchWithJiraAuth(`https://api.atlassian.com/ex/jira/${jiraCloudId}/rest/api/2/filter/${filterId}`, { headers: { 'Accept': 'application/json' } });
-                                    if (filterRes.ok) {
-                                        const filterData = await filterRes.json();
-                                        if (filterData && filterData.jql) {
-                                            boardFilterJql = filterData.jql;
-                                        }
-                                    }
-                                }
-                            }
-                        } catch (e) {}
-                    }
-
-                    if (boardFilterJql) {
-                        finalJql = `(${boardFilterJql}) AND ${jqlString}`;
-                    } else {
-                        finalJql = `project in (${projectKeysInput.map(k => `"${k}"`).join(',')}) AND ${jqlString}`;
-                    }
+                    finalJql = `project in (${projectKeysInput.map(k => `"${k}"`).join(',')}) AND ${jqlString}`;
                 }
 
                 const issueMap = new Map();
@@ -1415,7 +1341,7 @@ export default function App() {
                 detectedBoardName = targetName;
 
                 const currentWorkspace = workspaces.find(ws => ws.id === jiraCloudId);
-                const baseUrl = currentWorkspace ? currentWorkspace.url : JIRA_SITE_URL;
+                const baseUrl = currentWorkspace ? currentWorkspace.url : `https://enotion.atlassian.net`;
                 const pathPrefix = (projectStyle === 'classic') ? '/jira/software/c/projects' : '/jira/software/projects';
 
                 if (selectedBoardId) {
@@ -1436,7 +1362,6 @@ export default function App() {
                     
                     let issueTypeName = (issue.fields.issuetype && issue.fields.issuetype.name) ? issue.fields.issuetype.name.toUpperCase().trim() : '';
                     if (issueTypeName === 'BUG/DEFECT' || issueTypeName === 'SUB-TASK') {
-                        // Sub-task trong [QC] Bugs List quy ước là Bug nếu không có label/type khác
                         issueTypeName = 'BUG';
                     }
 
@@ -1447,7 +1372,7 @@ export default function App() {
                         if (checkedJiraB[statusName]) isValidStatus = true;
                     } else {
                         const statusClean = statusName.replace(/[^A-Z0-9]/g, '');
-                        if (['TODO', 'INPROGRESS', 'FIXEDDONE', 'FIXDONE'].includes(statusClean)) isValidStatus = true;
+                        if (['TODO', 'INPROGRESS', 'FIXEDDONE', 'FIXDONE', 'RESOLVED', 'CLOSED'].includes(statusClean)) isValidStatus = true;
                     }
                     if (isValidStatus) {
                         const summary = issue.fields.summary || '';
@@ -1700,7 +1625,7 @@ export default function App() {
         }
     };
 
-    const statusPillList = jiraStatuses.length > 0 ? jiraStatuses : ['TODO', 'IN PROGRESS', 'FIXEDDONE'];
+    const statusPillList = jiraStatuses.length > 0 ? jiraStatuses : ['TODO', 'IN PROGRESS', 'FIXEDDONE', 'CLOSED'];
 
     const handleSwitchMode = (mode) => {
         setActiveTabMode(mode);
@@ -1720,7 +1645,6 @@ export default function App() {
                     </div>
                 </div>
 
-                {/* Chuyển đổi giữa 2 chế độ: Cũ vs Mới (Cây Epic -> [QC] Bugs List) */}
                 <div className="bg-slate-200/80 p-1 rounded-2xl flex items-center gap-1 shadow-inner border border-slate-300">
                     <button
                         type="button"
@@ -1740,9 +1664,25 @@ export default function App() {
                 </div>
 
                 <div className="flex items-center gap-4">
-                    {jiraToken && jiraCloudId && (
-                        <div className="text-xs font-semibold text-slate-600">
-                            Jira: {JIRA_SITE_HOST} · Project {JIRA_PROJECT_KEY} · Board {JIRA_BOARD_ID}
+                    {workspaces.length > 0 && jiraToken && (
+                        <div className="flex items-center gap-2">
+                            <label className="text-xs font-semibold text-slate-600">Workspace:</label>
+                            <select 
+                                value={jiraCloudId || ''} 
+                                onChange={e => {
+                                    const newCloudId = e.target.value;
+                                    setJiraCloudId(newCloudId);
+                                    localStorage.setItem('jira_cloud_id', newCloudId);
+                                    showToast("Switched Jira Workspace", 'success');
+                                }}
+                                className="h-10 px-3 bg-white border border-slate-300 rounded-xl text-xs font-medium text-slate-800 focus:outline-none focus:border-indigo-600 shadow-sm"
+                            >
+                                {workspaces.map(ws => (
+                                    <option key={ws.id} value={ws.id}>
+                                        {ws.name} ({extractDomain(ws.url)})
+                                    </option>
+                                ))}
+                            </select>
                         </div>
                     )}
 
@@ -1766,7 +1706,6 @@ export default function App() {
 
             <main className="w-full grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
 
-                {/* CỘT 1: CẤU HÌNH DỰ ÁN & JIRA */}
                 <section className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm flex flex-col gap-4">
                     <h2 className="text-sm font-bold text-slate-800 tracking-wide flex items-center justify-between">
                         <div className="flex items-center gap-2">
@@ -1778,22 +1717,30 @@ export default function App() {
                         )}
                     </h2>
 
-                    {/* BƯỚC 1: CHỌN PROJECT KEY */}
                     <div className="flex flex-col gap-1.5">
-                        <label className="text-xs font-semibold text-slate-600">1. Jira Project</label>
-                        <div className="flex items-center justify-between gap-3 h-10 px-3.5 bg-slate-50 border border-slate-200 rounded-xl">
-                            <span className="text-xs font-bold text-slate-800">{JIRA_PROJECT_KEY}</span>
-                            <span className="text-[10px] font-semibold text-slate-500">{JIRA_SITE_HOST}</span>
+                        <label className="text-xs font-semibold text-slate-600">1. Project Key (Board dự án lớn)</label>
+                        <div className="flex gap-2">
+                            <div className="flex-1">
+                                <SearchableDropdown 
+                                    ref={projectKeyRef}
+                                    options={availableProjects} 
+                                    value={sheetName} 
+                                    onChange={val => {
+                                        setSheetName(val);
+                                        setFormErrors(prev => prev.filter(err => err !== "Project Key"));
+                                    }} 
+                                    placeholder="Chọn Project Key (vd: STR)..."
+                                    isError={formErrors.includes("Project Key")}
+                                />
+                            </div>
+                            <button type="button" onClick={handleLoadStatuses} className="px-3.5 h-10 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-md transition-all flex items-center gap-1">
+                                <span>↻ Sync</span>
+                            </button>
                         </div>
-                        <button type="button" onClick={handleLoadStatuses} className="w-full px-3.5 h-10 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-md transition-all flex items-center justify-center gap-1">
-                            <span>↻ Sync Jira Data</span>
-                        </button>
                     </div>
 
-                    {/* HIỂN THỊ DÀNH CHO TAB MỚI: FLOW HIERARCHY */}
                     {activeTabMode === 'hierarchy' ? (
                         <div className="flex flex-col gap-3 p-3 bg-indigo-50/40 rounded-xl border border-indigo-100">
-                            {/* BƯỚC 2: CHỌN EPIC */}
                             <div className="flex flex-col gap-1.5">
                                 <div className="flex justify-between items-center">
                                     <label className="text-xs font-bold text-indigo-900">2. Chọn Epic (Game)</label>
@@ -1807,7 +1754,6 @@ export default function App() {
                                 />
                             </div>
 
-                            {/* BƯỚC 3: LIỆT KÊ VÀ CHỌN TASK ([QC] BUGS LIST) */}
                             <div className="flex flex-col gap-1.5">
                                 <div className="flex justify-between items-center">
                                     <label className="text-xs font-bold text-indigo-900">3. Task Target ([QC] Bugs List)</label>
@@ -1816,7 +1762,10 @@ export default function App() {
                                 <SearchableDropdown
                                     options={epicTasksList}
                                     value={selectedTaskKey}
-                                    onChange={setSelectedTaskKey}
+                                    onChange={val => {
+                                        setSelectedTaskKey(val);
+                                        syncSubTaskMetadata(val);
+                                    }}
                                     placeholder={isLoadingTasks ? "Đang lấy task..." : "Chọn Task (Mặc định [QC] Bugs List)..."}
                                     isError={formErrors.includes("Target Task / [QC] Bugs List")}
                                 />
@@ -1826,12 +1775,18 @@ export default function App() {
                             </div>
                         </div>
                     ) : (
-                        /* CHẾ ĐỘ CŨ (CLASSIC FLOW) */
                         <>
-                            <div className="flex flex-col gap-1.5 mt-2 bg-indigo-50/50 p-3 rounded-xl border border-indigo-100">
-                                <label className="text-xs font-bold text-indigo-700">Jira Board</label>
-                                <div className="text-xs font-semibold text-indigo-900">Board ID: {JIRA_BOARD_ID}</div>
-                            </div>
+                            {availableBoards.length > 0 && (
+                                <div className="flex flex-col gap-1.5 mt-2 bg-indigo-50/50 p-3 rounded-xl border border-indigo-100">
+                                    <label className="text-xs font-bold text-indigo-700">Select Specific Board (Studio/Game)</label>
+                                    <SearchableDropdown
+                                        options={availableBoards.map(b => ({ value: b.id, label: b.name }))}
+                                        value={selectedBoardId}
+                                        onChange={handleBoardChange}
+                                        placeholder="Search and select a board..."
+                                    />
+                                </div>
+                            )}
 
                             <div className="grid grid-cols-2 gap-3">
                                 <div className="flex flex-col gap-1.5">
@@ -1982,7 +1937,6 @@ export default function App() {
                     </div>
                 </section>
 
-                {/* CỘT 2: ENVIRONMENTS & LINKS */}
                 <section className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm flex flex-col gap-4">
                     <h2 className="text-sm font-bold text-slate-800 tracking-wide flex items-center gap-2">
                         <span className="w-2 h-2 rounded-full bg-indigo-600"></span>
@@ -2094,7 +2048,6 @@ export default function App() {
                     </div>
                 </section>
 
-                {/* CỘT 3: SCOPE OF TESTING & TAG FILTERS */}
                 <section className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm flex flex-col gap-4">
                     <div className="flex justify-between items-center">
                         <h2 className="text-sm font-bold text-slate-800 tracking-wide flex items-center gap-2">
@@ -2165,7 +2118,6 @@ export default function App() {
 
             </main>
 
-            {/* ACTION BAR */}
             <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40">
                 <div className="bg-white/90 backdrop-blur-md border border-slate-200 text-slate-900 rounded-2xl p-2 shadow-2xl flex items-center justify-center gap-2">
                     <button
@@ -2210,7 +2162,6 @@ export default function App() {
                 </div>
             </div>
 
-            {/* PREVIEW MODAL */}
             {isPreviewOpen && (
                 <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
                     <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl w-full max-w-4xl max-h-[85vh] flex flex-col overflow-hidden">
@@ -2231,7 +2182,6 @@ export default function App() {
                 </div>
             )}
 
-            {/* TOASTS */}
             {toasts.length > 0 && (
                 <div className="fixed top-5 left-1/2 -translate-x-1/2 z-[100] flex flex-col gap-3 w-full max-w-lg pointer-events-none">
                     {toasts.map(toast => (
