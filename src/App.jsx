@@ -637,7 +637,7 @@ const [selectedBoardId, setSelectedBoardId] = useState('');
 
     const initiateJiraSSO = () => {
         const redirectUri = encodeURIComponent(window.location.origin + window.location.pathname);
-        const scope = encodeURIComponent("read:jira-work read:jira-user offline_access"); 
+        const scope = encodeURIComponent("read:jira-work read:jira-user read:jira-software offline_access");
         const authUrl = `https://auth.atlassian.com/authorize?audience=api.atlassian.com&client_id=${ATLASSIAN_CLIENT_ID}&scope=${scope}&redirect_uri=${redirectUri}&response_type=code&prompt=consent`;
         window.location.href = authUrl;
     };
