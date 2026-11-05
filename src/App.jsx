@@ -11,7 +11,7 @@ const DEFAULT_SCOPES = [
     "Crosscheck", "Betfail", "Ban & Maintainance"
 ];
 
-const PRIORITY_ORDER = ['Highest', 'High', 'Medium', 'Low', 'Lowest'];
+const cleanStatusName = (s) => (s || '').trim().replace(/\s+/g, ' ').toUpperCase();
 
 const formatColumnList = (cols) => {
     if (!cols || cols.length === 0) return '';
@@ -130,13 +130,21 @@ export default function App() {
     const [checkedScopesMap, setCheckedScopesMap] = useState({});
     const [newScopeInput, setNewScopeInput] = useState('');
 
+    // Status Filters
     const [jiraStatuses, setJiraStatuses] = useState([]);
-    const [jiraTagsList, setJiraTagsList] = useState([]);
-    const [checkedJiraTagsMap, setCheckedJiraTagsMap] = useState({});
-    const [isTagAccordionOpen, setIsTagAccordionOpen] = useState(true);
     const [checkedJiraB, setCheckedJiraB] = useState({});
     const [checkedJiraUnverified, setCheckedJiraUnverified] = useState({});
     const [checkedJiraPending, setCheckedJiraPending] = useState({});
+
+    // Tag Filters
+    const [jiraTagsList, setJiraTagsList] = useState([]);
+    const [checkedJiraTagsMap, setCheckedJiraTagsMap] = useState({});
+    const [isTagAccordionOpen, setIsTagAccordionOpen] = useState(true);
+
+    // Dynamic Priority Filters
+    const [jiraPrioritiesList, setJiraPrioritiesList] = useState([]);
+    const [checkedPrioritiesMap, setCheckedPrioritiesMap] = useState({});
+    const [isPriorityAccordionOpen, setIsPriorityAccordionOpen] = useState(true);
 
     // Classic Filters
     const [jiraParents, setJiraParents] = useState([]);
@@ -166,14 +174,6 @@ export default function App() {
 
     const syncTimeoutRef = useRef(null);
 
-    const extractDomain = (url) => {
-        try {
-            return new URL(url).hostname.split('.')[0];
-        } catch {
-            return '';
-        }
-    };
-	
     const showToast = (message, type) => {
         const id = Date.now() + Math.random();
         setToasts(prev => [...prev.filter(t => t.type !== 'loading'), { id, message, type }]);
@@ -199,6 +199,12 @@ export default function App() {
         setJiraParents([]);
         setEpicOptions([]);
         setEpicTasksList([]);
+        setJiraStatuses([]);
+        setCheckedJiraB({});
+        setCheckedJiraUnverified({});
+        setCheckedJiraPending({});
+        setJiraPrioritiesList([]);
+        setCheckedPrioritiesMap({});
         showToast("Disconnected Jira.", 'success');
     };
 
@@ -271,15 +277,38 @@ export default function App() {
         }
     }, [jiraCloudId, authTrigger]);
 
-    // Đồng bộ trạng thái vào các nhóm
+    // Đăng ký Priorities mới vào State
+    const registerPriorities = (newPriorities) => {
+        if (!newPriorities || newPriorities.length === 0) return;
+        const formatted = Array.from(new Set(newPriorities.map(p => p.trim()).filter(Boolean)));
+        
+        setJiraPrioritiesList(prev => {
+            const combined = Array.from(new Set([...prev, ...formatted]));
+            return combined;
+        });
+
+        setCheckedPrioritiesMap(prev => {
+            const next = { ...prev };
+            formatted.forEach(p => {
+                if (next[p] === undefined) next[p] = true;
+            });
+            return next;
+        });
+    };
+
     const registerStatusesToFilters = (newStatuses) => {
         if (!newStatuses || newStatuses.length === 0) return;
         
-        setJiraStatuses(prev => Array.from(new Set([...prev, ...newStatuses])));
+        const formattedNew = Array.from(new Set(newStatuses.map(cleanStatusName).filter(Boolean)));
+
+        setJiraStatuses(prev => {
+            const existingClean = prev.map(cleanStatusName);
+            return Array.from(new Set([...existingClean, ...formattedNew]));
+        });
 
         setCheckedJiraB(prev => {
             const next = { ...prev };
-            newStatuses.forEach(s => {
+            formattedNew.forEach(s => {
                 if (next[s] === undefined) {
                     const cleanS = s.replace(/[^A-Z0-9]/g, '');
                     next[s] = ['TODO', 'INPROGRESS', 'FIXEDDONE', 'FIXDONE', 'RESOLVED', 'CLOSED'].includes(cleanS);
@@ -290,7 +319,7 @@ export default function App() {
 
         setCheckedJiraUnverified(prev => {
             const next = { ...prev };
-            newStatuses.forEach(s => {
+            formattedNew.forEach(s => {
                 if (next[s] === undefined) {
                     const cleanS = s.replace(/[^A-Z0-9]/g, '');
                     next[s] = ['DEPLOYED', 'INTESTING'].includes(cleanS);
@@ -301,7 +330,7 @@ export default function App() {
 
         setCheckedJiraPending(prev => {
             const next = { ...prev };
-            newStatuses.forEach(s => {
+            formattedNew.forEach(s => {
                 if (next[s] === undefined) {
                     const cleanS = s.replace(/[^A-Z0-9]/g, '');
                     next[s] = ['PENDING', 'WAITFOR', 'WAITING'].some(p => cleanS.includes(p));
@@ -311,14 +340,14 @@ export default function App() {
         });
     };
 
-    // Quét động status và tag thực tế của các sub-task trong [QC] Bugs List
+    // Quét metadata từ các sub-task trong [QC] Bugs List (status, tag, priority)
     const syncSubTaskMetadata = async (taskKey) => {
         if (!taskKey || !jiraCloudId) return;
         try {
             const payload = {
                 jql: `parent = "${taskKey}"`,
                 maxResults: 150,
-                fields: ["status", "summary"]
+                fields: ["status", "summary", "priority"]
             };
             const res = await fetchWithJiraAuth(`https://api.atlassian.com/ex/jira/${jiraCloudId}/rest/api/3/search/jql`, {
                 method: 'POST',
@@ -329,12 +358,20 @@ export default function App() {
             if (res.ok) {
                 const data = await res.json();
                 const items = data.issues || data.values || [];
-                const foundStatuses = items.map(iss => iss.fields?.status?.name?.toUpperCase().trim()).filter(Boolean);
                 
+                // Statuses
+                const foundStatuses = items.map(iss => iss.fields?.status?.name).filter(Boolean);
                 if (foundStatuses.length > 0) {
                     registerStatusesToFilters(foundStatuses);
                 }
 
+                // Priorities
+                const foundPriorities = items.map(iss => iss.fields?.priority?.name).filter(Boolean);
+                if (foundPriorities.length > 0) {
+                    registerPriorities(foundPriorities);
+                }
+
+                // Tags
                 const foundTags = new Set();
                 items.forEach(iss => {
                     const summary = iss.fields?.summary || '';
@@ -357,7 +394,6 @@ export default function App() {
         }
     };
 
-    // Đồng bộ danh sách Epics cho Project lớn
     const syncEpicsForProject = async (projectKey) => {
         if (!jiraToken || !jiraCloudId || !projectKey) return;
         setIsLoadingEpics(true);
@@ -384,7 +420,6 @@ export default function App() {
         }
     };
 
-    // Khi chọn Epic, quét ra các Task con (bao gồm [QC] Bugs List)
     const handleEpicSelect = async (epicKey) => {
         setSelectedEpicKey(epicKey);
         setSelectedTaskKey('');
@@ -457,9 +492,11 @@ export default function App() {
                 if (state.linkPreprod) setLinkPreprod(state.linkPreprod);
                 if (Array.isArray(state.scopesList)) setScopesList(state.scopesList);
                 if (state.checkedScopes) setCheckedScopesMap(state.checkedScopes);
-                if (Array.isArray(state.jiraStatusesList)) setJiraStatuses(state.jiraStatusesList);
+                if (Array.isArray(state.jiraStatusesList)) setJiraStatuses(Array.from(new Set(state.jiraStatusesList.map(cleanStatusName))));
                 if (Array.isArray(state.jiraTagsList)) setJiraTagsList(state.jiraTagsList);
                 if (state.checkedJiraTagsMap) setCheckedJiraTagsMap(state.checkedJiraTagsMap);
+                if (Array.isArray(state.jiraPrioritiesList)) setJiraPrioritiesList(state.jiraPrioritiesList);
+                if (state.checkedPrioritiesMap) setCheckedPrioritiesMap(state.checkedPrioritiesMap);
                 if (state.checkedJiraStatuses_B) setCheckedJiraB(state.checkedJiraStatuses_B);
                 if (state.checkedJiraStatuses_Unverified) setCheckedJiraUnverified(state.checkedJiraStatuses_Unverified);
                 if (state.checkedJiraStatuses_Pending) setCheckedJiraPending(state.checkedJiraStatuses_Pending);
@@ -534,7 +571,7 @@ export default function App() {
             scopesList, checkedScopes: checkedScopesMap, jiraStatusesList: jiraStatuses, checkedJiraStatuses_B: checkedJiraB,
             checkedJiraStatuses_Unverified: checkedJiraUnverified, checkedJiraStatuses_Pending: checkedJiraPending,
             jiraParents, selectedParent,
-            jiraTagsList, checkedJiraTagsMap, availableSheetTabs,
+            jiraTagsList, checkedJiraTagsMap, jiraPrioritiesList, checkedPrioritiesMap, availableSheetTabs,
             selectedEpicKey, selectedTaskKey
         };
         localStorage.setItem('last_session_state', JSON.stringify(config));
@@ -543,7 +580,7 @@ export default function App() {
         qcNames, testingStatus, chkCustomNote, customNotesData, chkCustomIframe, customIframesData, chkWebapp, chkApptek, chkPreprod, linkShared, linkPreprod,
         scopesList, checkedScopesMap, jiraStatuses, checkedJiraB, checkedJiraUnverified, checkedJiraPending,
         jiraParents, selectedParent,
-        jiraTagsList, checkedJiraTagsMap, availableSheetTabs,
+        jiraTagsList, checkedJiraTagsMap, jiraPrioritiesList, checkedPrioritiesMap, availableSheetTabs,
         selectedEpicKey, selectedTaskKey
     ]);
 
@@ -663,6 +700,18 @@ export default function App() {
             const statusSet = new Set();
             const parentsMap = new Map();
 
+            // 1. Quét Priority toàn workspace qua REST API Jira
+            try {
+                const prRes = await fetchWithJiraAuth(`https://api.atlassian.com/ex/jira/${jiraCloudId}/rest/api/2/priority`, { headers: { 'Accept': 'application/json' } });
+                if (prRes.ok) {
+                    const prData = await prRes.json();
+                    if (Array.isArray(prData)) {
+                        registerPriorities(prData.map(p => p.name));
+                    }
+                }
+            } catch (e) { }
+
+            // 2. Quét Statuses từ Project
             for (const key of keys) {
                 try {
                     const targetUrl = `https://api.atlassian.com/ex/jira/${jiraCloudId}/rest/api/2/project/${key}/statuses`;
@@ -672,7 +721,7 @@ export default function App() {
                         data.forEach(issueType => {
                             issueType.statuses?.forEach(status => {
                                 if (status && status.name) {
-                                    statusSet.add(status.name.toUpperCase().trim());
+                                    statusSet.add(cleanStatusName(status.name));
                                 }
                             });
                         });
@@ -714,7 +763,7 @@ export default function App() {
     };
 
     const toggleAllJiraCategory = (category, selectAll) => {
-        const targetList = jiraStatuses.length > 0 ? jiraStatuses : ['TODO', 'IN PROGRESS', 'FIXEDDONE', 'CLOSED'];
+        const targetList = jiraStatuses;
         const newMap = {};
         targetList.forEach(s => { newMap[s] = selectAll; });
         if (category === 'B') setCheckedJiraB(newMap);
@@ -726,6 +775,12 @@ export default function App() {
         const newMap = {};
         jiraTagsList.forEach(t => { newMap[t] = selectAll; });
         setCheckedJiraTagsMap(newMap);
+    };
+
+    const toggleAllPriorities = (selectAll) => {
+        const newMap = {};
+        jiraPrioritiesList.forEach(p => { newMap[p] = selectAll; });
+        setCheckedPrioritiesMap(newMap);
     };
 
     const toggleAllScopes = (selectAll) => {
@@ -1213,7 +1268,6 @@ export default function App() {
                 let finalJql = "";
 
                 if (activeTabMode === 'hierarchy') {
-                    // Tree Mode: Lấy thẳng sub-task con của Task [QC] Bugs List
                     finalJql = `parent = "${selectedTaskKey}" AND issuetype in (Bug, "Bug/Defect", Improvement, Question, Sub-task) ORDER BY created DESC`;
 
                     if (selectedEpicKey) {
@@ -1272,8 +1326,9 @@ export default function App() {
                 let buildStatusCount = 0;
                 let bugCount = 0, impCount = 0, queCount = 0;
                 let bugPriorityMap = {};
+                
                 jiraIssues.forEach(issue => {
-                    let statusName = (issue.fields.status && issue.fields.status.name) ? issue.fields.status.name.toUpperCase().trim() : '';
+                    let statusName = cleanStatusName(issue.fields.status?.name);
                     if (checkedJiraUnverified[statusName]) { unverifiedCount++; unverifiedStatusesFound.add(statusName); }
                     if (checkedJiraPending[statusName]) { pendingCount++; pendingStatusesFound.add(statusName); }
                     
@@ -1291,18 +1346,26 @@ export default function App() {
                         const statusClean = statusName.replace(/[^A-Z0-9]/g, '');
                         if (['TODO', 'INPROGRESS', 'FIXEDDONE', 'FIXDONE', 'RESOLVED', 'CLOSED'].includes(statusClean)) isValidStatus = true;
                     }
+
                     if (isValidStatus) {
                         const summary = issue.fields.summary || '';
                         const bracketMatch = summary.match(/\[([^\]]+)\]/);
                         const tag = bracketMatch ? bracketMatch[1].trim().toUpperCase() : 'OTHERS';
 
+                        // 1. Lọc theo Tag
                         if (jiraTagsList.length > 0 && !checkedJiraTagsMap[tag]) {
                             return; 
                         }
 
-                        buildStatusCount++;
+                        // 2. Lọc động theo Priority được tick chọn
                         let pName = (issue.fields.priority && issue.fields.priority.name) ? issue.fields.priority.name.trim() : 'Unknown';
                         pName = pName.charAt(0).toUpperCase() + pName.slice(1).toLowerCase();
+
+                        if (jiraPrioritiesList.length > 0 && checkedPrioritiesMap[pName] === false) {
+                            return;
+                        }
+
+                        buildStatusCount++;
                         if (issueTypeName === 'BUG') {
                             bugCount++;
                             if (!bugPriorityMap[pName]) bugPriorityMap[pName] = 0;
@@ -1316,10 +1379,16 @@ export default function App() {
                     }
                 });
                 
+                 const effectivePrioritiesOrder = jiraPrioritiesList.length > 0 ? jiraPrioritiesList : Object.keys(bugPriorityMap);
+
                 let buildStatusParts = [];
                 if (bugCount > 0) {
-                    PRIORITY_ORDER.forEach(pr => { if (bugPriorityMap[pr]) buildStatusParts.push(pr + ": " + bugPriorityMap[pr]); });
-                    for (const pr in bugPriorityMap) { if (!PRIORITY_ORDER.includes(pr)) buildStatusParts.push(pr + ": " + bugPriorityMap[pr]); }
+                    effectivePrioritiesOrder.forEach(pr => { 
+                        if (bugPriorityMap[pr]) buildStatusParts.push(pr + ": " + bugPriorityMap[pr]); 
+                    });
+                    for (const pr in bugPriorityMap) { 
+                        if (!effectivePrioritiesOrder.includes(pr)) buildStatusParts.push(pr + ": " + bugPriorityMap[pr]); 
+                    }
                 }
                 if (impCount > 0) buildStatusParts.push(`Improvement: ${impCount}`);
                 if (queCount > 0) buildStatusParts.push(`Question: ${queCount}`);
@@ -1354,13 +1423,18 @@ export default function App() {
                                         const tickets = typeContainers['BUG'][tag][priority];
                                         jiraBody += `- ${priority}: ${tickets.length}\n`;
                                         
-                                        if (buildStatusCount <= 5 || priority === 'High' || priority === 'Highest') {
+                                        // In danh sách chi tiết tickets nếu tổng <= 5 hoặc là các priority cao đầu tiên
+                                        const isHighPriority = priority.toLowerCase().includes('high');
+                                        if (buildStatusCount <= 5 || isHighPriority) {
                                             tickets.forEach(t => { jiraBody += `    + ${t.key} - ${t.summary}\n`; });
                                         }
                                     }
                                 };
-                                PRIORITY_ORDER.forEach(printPriority);
-                                for (const pr in typeContainers['BUG'][tag]) { if (!PRIORITY_ORDER.includes(pr)) printPriority(pr); }
+
+                                effectivePrioritiesOrder.forEach(printPriority);
+                                for (const pr in typeContainers['BUG'][tag]) { 
+                                    if (!effectivePrioritiesOrder.includes(pr)) printPriority(pr); 
+                                }
                                 jiraBody += "——————————————————\n";
                                 sectionIndex++;
                             });
@@ -1386,13 +1460,17 @@ export default function App() {
                                     const tickets = priorityMapForType[priority];
                                     jiraBody += `- ${priority}: ${tickets.length}\n`;
                                     
-                                    if (buildStatusCount <= 5 || priority === 'High' || priority === 'Highest') {
+                                    const isHighPriority = priority.toLowerCase().includes('high');
+                                    if (buildStatusCount <= 5 || isHighPriority) {
                                         tickets.forEach(t => { jiraBody += `    + ${t.key} - ${t.summary}\n`; });
                                     }
                                 }
                             };
-                            PRIORITY_ORDER.forEach(printPriority);
-                            for (const pr in priorityMapForType) { if (!PRIORITY_ORDER.includes(pr)) printPriority(pr); }
+
+                            effectivePrioritiesOrder.forEach(printPriority);
+                            for (const pr in priorityMapForType) { 
+                                if (!effectivePrioritiesOrder.includes(pr)) printPriority(pr); 
+                            }
                             jiraBody += "——————————————————\n";
                             sectionIndex++;
                         }
@@ -1540,7 +1618,7 @@ export default function App() {
         }
     };
 
-    const statusPillList = jiraStatuses.length > 0 ? jiraStatuses : ['TODO', 'IN PROGRESS', 'FIXEDDONE', 'CLOSED'];
+    const statusPillList = Array.from(new Set(jiraStatuses.map(cleanStatusName)));
 
     const handleSwitchMode = (mode) => {
         setActiveTabMode(mode);
@@ -1566,7 +1644,7 @@ export default function App() {
                         onClick={() => handleSwitchMode('classic')}
                         className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${activeTabMode === 'classic' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
                     >
-                        Standard Flow (Current)
+                        Standard Flow (Old Board)
                     </button>
                     <button
                         type="button"
@@ -1574,33 +1652,11 @@ export default function App() {
                         className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${activeTabMode === 'hierarchy' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
                     >
                         <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                        Hierarchical Flow (Epic &gt; [QC] Bugs List)
+                        Hierarchical Flow (New Board)
                     </button>
                 </div>
 
                 <div className="flex items-center gap-4">
-                    {workspaces.length > 0 && jiraToken && (
-                        <div className="flex items-center gap-2">
-                            <label className="text-xs font-semibold text-slate-600">Workspace:</label>
-                            <select 
-                                value={jiraCloudId || ''} 
-                                onChange={e => {
-                                    const newCloudId = e.target.value;
-                                    setJiraCloudId(newCloudId);
-                                    localStorage.setItem('jira_cloud_id', newCloudId);
-                                    showToast("Switched Jira Workspace", 'success');
-                                }}
-                                className="h-10 px-3 bg-white border border-slate-300 rounded-xl text-xs font-medium text-slate-800 focus:outline-none focus:border-indigo-600 shadow-sm"
-                            >
-                                {workspaces.map(ws => (
-                                    <option key={ws.id} value={ws.id}>
-                                        {ws.name} ({extractDomain(ws.url)})
-                                    </option>
-                                ))}
-                            </select>
-                        </div>
-                    )}
-
                     <div className="flex items-center gap-3 bg-white/90 border border-slate-200 px-4 py-2 rounded-2xl backdrop-blur-md shadow-sm">
                         <span className={`w-2.5 h-2.5 rounded-full ${jiraToken && jiraCloudId ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)]' : 'bg-slate-400'}`}></span>
                         <span className="text-xs font-semibold text-slate-700">
@@ -1684,9 +1740,6 @@ export default function App() {
                                     placeholder={isLoadingTasks ? "Đang lấy task..." : "Chọn Task (Mặc định [QC] Bugs List)..."}
                                     isError={formErrors.includes("Target Task / [QC] Bugs List")}
                                 />
-                                <span className="text-[10px] text-slate-500">
-                                    * Tự động quét các Sub-task Bug/Improvement/Question nằm trong Task này.
-                                </span>
                             </div>
                         </div>
                     ) : (
@@ -1757,6 +1810,7 @@ export default function App() {
                         </div>
                     </div>
 
+                    {/* JIRA STATUS ACCORDION */}
                     <div className="bg-slate-50 border border-slate-200 rounded-xl overflow-hidden mt-1">
                         <button type="button" onClick={() => setIsAccordionOpen(!isAccordionOpen)} className="w-full px-4 py-3 flex items-center justify-between text-xs font-bold text-slate-700 hover:bg-slate-100 transition-all">
                             <span>Jira Status Settings</span>
@@ -1764,66 +1818,74 @@ export default function App() {
                         </button>
 
                         {isAccordionOpen && (
-                            <div className="p-3 border-t border-slate-200 grid grid-cols-1 sm:grid-cols-3 gap-3 bg-slate-50">
-                                <div className="flex flex-col gap-2">
-                                    <div className="flex justify-between items-center">
-                                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-tight">Count</span>
-                                        <div className="flex gap-1 text-[9px]">
-                                            <button type="button" onClick={() => toggleAllJiraCategory('B', true)} className="text-indigo-600 hover:underline font-bold">All</button>
-                                            <span className="text-slate-300">|</span>
-                                            <button type="button" onClick={() => toggleAllJiraCategory('B', false)} className="text-slate-500 hover:underline">None</button>
-                                        </div>
+                            <div className="p-3 border-t border-slate-200 bg-slate-50">
+                                {statusPillList.length === 0 ? (
+                                    <div className="p-4 text-center text-xs text-slate-400 italic">
+                                        Chưa có trạng thái nào. Vui lòng chọn Project Key và bấm <strong>↻ Sync</strong>.
                                     </div>
-                                    {statusPillList.map(s => { 
-                                        const isChecked = !!checkedJiraB[s];
-                                        return (
-                                            <div key={s} onClick={() => setCheckedJiraB(p => ({ ...p, [s]: !isChecked }))} className={`px-2 py-1 rounded-lg border flex items-center justify-between cursor-pointer transition-all ${isChecked ? 'bg-indigo-50 border-indigo-300 text-indigo-700' : 'bg-white border-slate-200 text-slate-600'}`}>
-                                                <span className="text-[10px] font-semibold truncate">{s}</span>
-                                                <span className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center text-[8px] font-bold ${isChecked ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white border-slate-300'}`}>{isChecked ? '✓' : ''}</span>
+                                ) : (
+                                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                        <div className="flex flex-col gap-2">
+                                            <div className="flex justify-between items-center">
+                                                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-tight">Count</span>
+                                                <div className="flex gap-1 text-[9px]">
+                                                    <button type="button" onClick={() => toggleAllJiraCategory('B', true)} className="text-indigo-600 hover:underline font-bold">All</button>
+                                                    <span className="text-slate-300">|</span>
+                                                    <button type="button" onClick={() => toggleAllJiraCategory('B', false)} className="text-slate-500 hover:underline">None</button>
+                                                </div>
                                             </div>
-                                        );
-                                    })}
-                                </div>
+                                            {statusPillList.map(s => { 
+                                                const isChecked = !!checkedJiraB[s];
+                                                return (
+                                                    <div key={s} onClick={() => setCheckedJiraB(p => ({ ...p, [s]: !isChecked }))} className={`px-2 py-1 rounded-lg border flex items-center justify-between cursor-pointer transition-all ${isChecked ? 'bg-indigo-50 border-indigo-300 text-indigo-700' : 'bg-white border-slate-200 text-slate-600'}`}>
+                                                        <span className="text-[10px] font-semibold truncate">{s}</span>
+                                                        <span className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center text-[8px] font-bold ${isChecked ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white border-slate-300'}`}>{isChecked ? '✓' : ''}</span>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
 
-                                <div className="flex flex-col gap-2">
-                                    <div className="flex justify-between items-center">
-                                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-tight">Unverified</span>
-                                        <div className="flex gap-1 text-[9px]">
-                                            <button type="button" onClick={() => toggleAllJiraCategory('Unverified', true)} className="text-amber-600 hover:underline font-bold">All</button>
-                                            <span className="text-slate-300">|</span>
-                                            <button type="button" onClick={() => toggleAllJiraCategory('Unverified', false)} className="text-slate-500 hover:underline">None</button>
-                                        </div>
-                                    </div>
-                                    {statusPillList.map(s => {
-                                        const isChecked = !!checkedJiraUnverified[s];
-                                        return (
-                                            <div key={s} onClick={() => setCheckedJiraUnverified(p => ({ ...p, [s]: !isChecked }))} className={`px-2 py-1 rounded-lg border flex items-center justify-between cursor-pointer transition-all ${isChecked ? 'bg-amber-50 border-amber-300 text-amber-800' : 'bg-white border-slate-200 text-slate-600'}`}>
-                                                <span className="text-[10px] font-semibold truncate">{s}</span>
-                                                <span className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center text-[8px] font-bold ${isChecked ? 'bg-amber-500 text-white border-amber-500' : 'bg-white border-slate-300'}`}>{isChecked ? '✓' : ''}</span>
+                                        <div className="flex flex-col gap-2">
+                                            <div className="flex justify-between items-center">
+                                                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-tight">Unverified</span>
+                                                <div className="flex gap-1 text-[9px]">
+                                                    <button type="button" onClick={() => toggleAllJiraCategory('Unverified', true)} className="text-amber-600 hover:underline font-bold">All</button>
+                                                    <span className="text-slate-300">|</span>
+                                                    <button type="button" onClick={() => toggleAllJiraCategory('Unverified', false)} className="text-slate-500 hover:underline">None</button>
+                                                </div>
                                             </div>
-                                        );
-                                    })}
-                                </div>
+                                            {statusPillList.map(s => {
+                                                const isChecked = !!checkedJiraUnverified[s];
+                                                return (
+                                                    <div key={s} onClick={() => setCheckedJiraUnverified(p => ({ ...p, [s]: !isChecked }))} className={`px-2 py-1 rounded-lg border flex items-center justify-between cursor-pointer transition-all ${isChecked ? 'bg-amber-50 border-amber-300 text-amber-800' : 'bg-white border-slate-200 text-slate-600'}`}>
+                                                        <span className="text-[10px] font-semibold truncate">{s}</span>
+                                                        <span className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center text-[8px] font-bold ${isChecked ? 'bg-amber-500 text-white border-amber-500' : 'bg-white border-slate-300'}`}>{isChecked ? '✓' : ''}</span>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
 
-                                <div className="flex flex-col gap-2">
-                                    <div className="flex justify-between items-center">
-                                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-tight">Pending</span>
-                                        <div className="flex gap-1 text-[9px]">
-                                            <button type="button" onClick={() => toggleAllJiraCategory('Pending', true)} className="text-indigo-600 hover:underline font-bold">All</button>
-                                            <span className="text-slate-300">|</span>
-                                            <button type="button" onClick={() => toggleAllJiraCategory('Pending', false)} className="text-slate-500 hover:underline">None</button>
+                                        <div className="flex flex-col gap-2">
+                                            <div className="flex justify-between items-center">
+                                                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-tight">Pending</span>
+                                                <div className="flex gap-1 text-[9px]">
+                                                    <button type="button" onClick={() => toggleAllJiraCategory('Pending', true)} className="text-indigo-600 hover:underline font-bold">All</button>
+                                                    <span className="text-slate-300">|</span>
+                                                    <button type="button" onClick={() => toggleAllJiraCategory('Pending', false)} className="text-slate-500 hover:underline">None</button>
+                                                </div>
+                                            </div>
+                                            {statusPillList.map(s => {
+                                                const isChecked = !!checkedJiraPending[s];
+                                                return (
+                                                    <div key={s} onClick={() => setCheckedJiraPending(p => ({ ...p, [s]: !isChecked }))} className={`px-2 py-1 rounded-lg border flex items-center justify-between cursor-pointer transition-all ${isChecked ? 'bg-indigo-50 border-indigo-300 text-indigo-700' : 'bg-white border-slate-200 text-slate-600'}`}>
+                                                        <span className="text-[10px] font-semibold truncate">{s}</span>
+                                                        <span className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center text-[8px] font-bold ${isChecked ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white border-slate-300'}`}>{isChecked ? '✓' : ''}</span>
+                                                    </div>
+                                                );
+                                            })}
                                         </div>
                                     </div>
-                                    {statusPillList.map(s => {
-                                        const isChecked = !!checkedJiraPending[s];
-                                        return (
-                                            <div key={s} onClick={() => setCheckedJiraPending(p => ({ ...p, [s]: !isChecked }))} className={`px-2 py-1 rounded-lg border flex items-center justify-between cursor-pointer transition-all ${isChecked ? 'bg-indigo-50 border-indigo-300 text-indigo-700' : 'bg-white border-slate-200 text-slate-600'}`}>
-                                                <span className="text-[10px] font-semibold truncate">{s}</span>
-                                                <span className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center text-[8px] font-bold ${isChecked ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white border-slate-300'}`}>{isChecked ? '✓' : ''}</span>
-                                            </div>
-                                        );
-                                    })}
-                                </div>
+                                )}
                             </div>
                         )}
                     </div>
@@ -1958,7 +2020,7 @@ export default function App() {
                         <button type="button" onClick={handleAddScope} className="px-3 h-9 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl border border-slate-300 transition-all">+ Add</button>
                     </div>
 
-                    <div className="flex flex-wrap gap-2 max-h-[420px] overflow-y-auto pr-1">
+                    <div className="flex flex-wrap gap-2 max-h-[220px] overflow-y-auto pr-1">
                         {scopesList.map(scope => {
                             const isChecked = !!checkedScopesMap[scope];
                             return (
@@ -1974,8 +2036,44 @@ export default function App() {
                             );
                         })}
                     </div>
+
+                    {/* DYNAMIC PRIORITY ACCORDION */}
+                    {jiraPrioritiesList.length > 0 && (
+                        <div className="bg-slate-50 border border-slate-200 rounded-xl overflow-hidden mt-1">
+                            <button type="button" onClick={() => setIsPriorityAccordionOpen(!isPriorityAccordionOpen)} className="w-full px-4 py-3 flex items-center justify-between text-xs font-bold text-slate-700 hover:bg-slate-100 transition-all">
+                                <span>Filter Priorities (Workspace)</span>
+                                <span className="text-slate-400">{isPriorityAccordionOpen ? '▲' : '▼'}</span>
+                            </button>
+
+                            {isPriorityAccordionOpen && (
+                                <div className="p-3 border-t border-slate-200 bg-slate-50">
+                                    <div className="flex justify-between items-center mb-2">
+                                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-tight">Select Priorities to Include</span>
+                                        <div className="flex gap-1 text-[9px]">
+                                            <button type="button" onClick={() => toggleAllPriorities(true)} className="text-indigo-600 hover:underline font-bold">All</button>
+                                            <span className="text-slate-300">|</span>
+                                            <button type="button" onClick={() => toggleAllPriorities(false)} className="text-slate-500 hover:underline">None</button>
+                                        </div>
+                                    </div>
+                                    <div className="flex flex-wrap gap-2 max-h-36 overflow-y-auto">
+                                        {jiraPrioritiesList.map(priority => {
+                                            const isChecked = !!checkedPrioritiesMap[priority];
+                                            return (
+                                                <div key={priority} onClick={() => setCheckedPrioritiesMap(p => ({ ...p, [priority]: !isChecked }))} className={`px-2.5 py-1.5 rounded-lg border flex items-center gap-1.5 cursor-pointer transition-all ${isChecked ? 'bg-indigo-50 border-indigo-300 text-indigo-700' : 'bg-white border-slate-200 text-slate-600'}`}>
+                                                    <span className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center text-[8px] font-bold ${isChecked ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white border-slate-300'}`}>{isChecked ? '✓' : ''}</span>
+                                                    <span className="text-[10px] font-semibold">{priority}</span>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {/* TAGS ACCORDION */}
                     {jiraTagsList.length > 0 && (
-                        <div className="bg-slate-50 border border-slate-200 rounded-xl overflow-hidden mt-3">
+                        <div className="bg-slate-50 border border-slate-200 rounded-xl overflow-hidden mt-1">
                             <button type="button" onClick={() => setIsTagAccordionOpen(!isTagAccordionOpen)} className="w-full px-4 py-3 flex items-center justify-between text-xs font-bold text-slate-700 hover:bg-slate-100 transition-all">
                                 <span>Filter Tags [Type]</span>
                                 <span className="text-slate-400">{isTagAccordionOpen ? '▲' : '▼'}</span>
@@ -1991,7 +2089,7 @@ export default function App() {
                                             <button type="button" onClick={() => toggleAllJiraTags(false)} className="text-slate-500 hover:underline">None</button>
                                         </div>
                                     </div>
-                                    <div className="flex flex-wrap gap-2 max-h-48 overflow-y-auto">
+                                    <div className="flex flex-wrap gap-2 max-h-40 overflow-y-auto">
                                         {jiraTagsList.map(tag => {
                                             const isChecked = !!checkedJiraTagsMap[tag];
                                             return (
