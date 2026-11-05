@@ -1586,7 +1586,7 @@ export default function App() {
             }
 
             if (chkPreprod) {
-                const preprodLines = preprodInputValue.split('\n').map(l => l.trim()).filter(l => l !== "") : [];
+                const preprodLines = preprodInputValue?.split('\n').map(l => l.trim()).filter(l => l !== "") || [];
                 if (preprodLines.length > 0) {
                     let firstLineClean = preprodLines[0].toLowerCase().replace(/^-\s*/, '');
                     if (firstLineClean.startsWith("preprod")) {
