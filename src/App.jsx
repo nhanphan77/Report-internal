@@ -20,6 +20,14 @@ const formatColumnList = (cols) => {
     return `${cols.slice(0, -1).join(', ')} and ${cols[cols.length - 1]}`;
 };
 
+const extractDomain = (url) => {
+    try {
+        return new URL(url).hostname.split('.')[0];
+    } catch {
+        return '';
+    }
+};
+
 const SearchableDropdown = React.forwardRef(({ options, value, onChange, placeholder, isError }, ref) => {
     const [isOpen, setIsOpen] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
@@ -130,27 +138,22 @@ export default function App() {
     const [checkedScopesMap, setCheckedScopesMap] = useState({});
     const [newScopeInput, setNewScopeInput] = useState('');
 
-    // Status Filters
     const [jiraStatuses, setJiraStatuses] = useState([]);
     const [checkedJiraB, setCheckedJiraB] = useState({});
     const [checkedJiraUnverified, setCheckedJiraUnverified] = useState({});
     const [checkedJiraPending, setCheckedJiraPending] = useState({});
 
-    // Tag Filters
     const [jiraTagsList, setJiraTagsList] = useState([]);
     const [checkedJiraTagsMap, setCheckedJiraTagsMap] = useState({});
     const [isTagAccordionOpen, setIsTagAccordionOpen] = useState(true);
 
-    // Dynamic Priority Filters
     const [jiraPrioritiesList, setJiraPrioritiesList] = useState([]);
     const [checkedPrioritiesMap, setCheckedPrioritiesMap] = useState({});
     const [isPriorityAccordionOpen, setIsPriorityAccordionOpen] = useState(true);
 
-    // Classic Filters
     const [jiraParents, setJiraParents] = useState([]);
     const [selectedParent, setSelectedParent] = useState('All');
 
-    // Hierarchical Filters
     const [epicOptions, setEpicOptions] = useState([]);
     const [selectedEpicKey, setSelectedEpicKey] = useState('');
     const [epicTasksList, setEpicTasksList] = useState([]);
@@ -205,6 +208,8 @@ export default function App() {
         setCheckedJiraPending({});
         setJiraPrioritiesList([]);
         setCheckedPrioritiesMap({});
+        setJiraTagsList([]);
+        setCheckedJiraTagsMap({});
         showToast("Disconnected Jira.", 'success');
     };
 
@@ -277,15 +282,11 @@ export default function App() {
         }
     }, [jiraCloudId, authTrigger]);
 
-    // Đăng ký Priorities mới vào State
     const registerPriorities = (newPriorities) => {
         if (!newPriorities || newPriorities.length === 0) return;
         const formatted = Array.from(new Set(newPriorities.map(p => p.trim()).filter(Boolean)));
         
-        setJiraPrioritiesList(prev => {
-            const combined = Array.from(new Set([...prev, ...formatted]));
-            return combined;
-        });
+        setJiraPrioritiesList(prev => Array.from(new Set([...prev, ...formatted])));
 
         setCheckedPrioritiesMap(prev => {
             const next = { ...prev };
@@ -340,7 +341,25 @@ export default function App() {
         });
     };
 
-    // Quét metadata từ các sub-task trong [QC] Bugs List (status, tag, priority)
+    const registerTags = (newTags) => {
+        if (!newTags || newTags.length === 0) return;
+        const formatted = Array.from(new Set(newTags.map(t => t.trim().toUpperCase()).filter(Boolean)));
+        setJiraTagsList(prev => {
+            let combined = Array.from(new Set([...prev, ...formatted])).sort();
+            if (combined.includes('OTHERS')) {
+                combined = ['OTHERS', ...combined.filter(t => t !== 'OTHERS')];
+            }
+            return combined;
+        });
+        setCheckedJiraTagsMap(prev => {
+            const next = { ...prev };
+            formatted.forEach(t => {
+                if (next[t] === undefined) next[t] = true;
+            });
+            return next;
+        });
+    };
+
     const syncSubTaskMetadata = async (taskKey) => {
         if (!taskKey || !jiraCloudId) return;
         try {
@@ -359,34 +378,29 @@ export default function App() {
                 const data = await res.json();
                 const items = data.issues || data.values || [];
                 
-                // Statuses
                 const foundStatuses = items.map(iss => iss.fields?.status?.name).filter(Boolean);
                 if (foundStatuses.length > 0) {
                     registerStatusesToFilters(foundStatuses);
                 }
 
-                // Priorities
                 const foundPriorities = items.map(iss => iss.fields?.priority?.name).filter(Boolean);
                 if (foundPriorities.length > 0) {
                     registerPriorities(foundPriorities);
                 }
 
-                // Tags
                 const foundTags = new Set();
                 items.forEach(iss => {
                     const summary = iss.fields?.summary || '';
                     const match = summary.match(/\[([^\]]+)\]/);
-                    if (match) foundTags.add(match[1].trim().toUpperCase());
+                    if (match) {
+                        foundTags.add(match[1].trim().toUpperCase());
+                    } else {
+                        foundTags.add('OTHERS');
+                    }
                 });
 
                 if (foundTags.size > 0) {
-                    const tagArr = Array.from(foundTags);
-                    setJiraTagsList(prev => Array.from(new Set([...prev, ...tagArr])));
-                    setCheckedJiraTagsMap(prev => {
-                        const next = { ...prev };
-                        tagArr.forEach(t => { if (next[t] === undefined) next[t] = true; });
-                        return next;
-                    });
+                    registerTags(Array.from(foundTags));
                 }
             }
         } catch (e) {
@@ -454,7 +468,7 @@ export default function App() {
                     syncSubTaskMetadata(tasks[0].value);
                 }
                 hideLoadingToast();
-                showToast("Loaded tasks for Epic!", 'success');
+                showToast("Loaded tasks for Epic successfully!", 'success');
             }
         } catch (err) {
             hideLoadingToast();
@@ -597,7 +611,7 @@ export default function App() {
         return () => {
             if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
         };
-    }, [sheetName]);
+    }, [sheetName, jiraCloudId]);
 
     const initiateJiraSSO = () => {
         const redirectUri = encodeURIComponent(window.location.origin + window.location.pathname);
@@ -700,7 +714,6 @@ export default function App() {
             const statusSet = new Set();
             const parentsMap = new Map();
 
-            // 1. Quét Priority toàn workspace qua REST API Jira
             try {
                 const prRes = await fetchWithJiraAuth(`https://api.atlassian.com/ex/jira/${jiraCloudId}/rest/api/2/priority`, { headers: { 'Accept': 'application/json' } });
                 if (prRes.ok) {
@@ -711,7 +724,6 @@ export default function App() {
                 }
             } catch (e) { }
 
-            // 2. Quét Statuses từ Project
             for (const key of keys) {
                 try {
                     const targetUrl = `https://api.atlassian.com/ex/jira/${jiraCloudId}/rest/api/2/project/${key}/statuses`;
@@ -739,6 +751,50 @@ export default function App() {
                         eData.issues?.forEach(iss => parentsMap.set(iss.key, iss.fields?.summary || iss.key));
                     }
                 } catch (e) { }
+            }
+
+            try {
+                let tagSet = new Set();
+                let jHasMore = true;
+                let currentToken = null;
+                const keysStr = keys.map(k => `"${k}"`).join(',');
+                const tagJql = `project in (${keysStr}) AND issuetype in (Bug, "Bug/Defect", Improvement, Question) ORDER BY created DESC`;
+                
+                while (jHasMore) {
+                    const payload = { jql: tagJql, maxResults: 100, fields: ["summary"] };
+                    if (currentToken) payload.nextPageToken = currentToken;
+                    
+                    const tRes = await fetchWithJiraAuth(`https://api.atlassian.com/ex/jira/${jiraCloudId}/rest/api/3/search/jql`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                    
+                    if (tRes.ok) {
+                        const d = await tRes.json();
+                        const items = d.issues || d.values || [];
+                        items.forEach(iss => {
+                            const summary = iss.fields?.summary || '';
+                            const match = summary.match(/\[([^\]]+)\]/);
+                            if (match) {
+                                tagSet.add(match[1].trim().toUpperCase());
+                            } else {
+                                tagSet.add('OTHERS');
+                            }
+                        });
+                        
+                        if (d.nextPageToken && items.length > 0) currentToken = d.nextPageToken;
+                        else jHasMore = false;
+                    } else {
+                        jHasMore = false;
+                    }
+                }
+
+                if (tagSet.size > 0) {
+                    registerTags(Array.from(tagSet));
+                }
+            } catch (e) {
+                console.error("Error while loading tags:", e);
             }
 
             if (statusSet.size > 0) {
@@ -796,7 +852,7 @@ export default function App() {
         }
         if (navigator.clipboard && window.isSecureContext) {
             navigator.clipboard.writeText(outputReport)
-                .then(() => showToast("Report compiled successfully.", 'success'))
+                .then(() => showToast("Report copied to clipboard successfully.", 'success'))
                 .catch(() => fallbackCopy(outputReport));
         } else {
             fallbackCopy(outputReport);
@@ -814,7 +870,7 @@ export default function App() {
         textArea.select();
         try {
             document.execCommand('copy');
-            showToast("Report compiled successfully.", 'success');
+            showToast("Report copied to clipboard successfully.", 'success');
         } catch (err) {
             showToast("Failed to copy text.", 'error');
         }
@@ -915,9 +971,8 @@ export default function App() {
 
             showToast('Connecting to Google Sheets...', 'loading');
             let finalReport = '';
-            let sheetTagOrder = [];
             let autoTestcaseLink = '';
-            let groups = {};
+            let rawSheetItems = [];
 
             try {
                 const spreadsheetIdMatch = urlInput.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
@@ -967,13 +1022,12 @@ export default function App() {
                     const driveCheck = await getGameIdFromDriveFolder(autoTestcaseLink, token);
                     if (!driveCheck.accessible) {
                         hideLoadingToast();
-                        alert(`❌ FAILED TO GENERATE:\n\nThe Drive link for the test case is inaccessible (404/403 error). \nPlease grant access (share the link) or check the link again:\n${autoTestcaseLink}`);
+                        alert(`FAILED TO GENERATE:\n\nThe Drive link for the test case is inaccessible (404/403 error).\nPlease grant access or check the link again:\n${autoTestcaseLink}`);
                         return;
                     }
                     if (driveCheck.id) finalGameId = driveCheck.id;
                 }
 
-                let totalItems = 0;
                 let doneHeaderPercent = '0%';
                 let inProgressHeaderPercent = '0%';
                 let remainingHeaderPercent = '0%';
@@ -1001,6 +1055,7 @@ export default function App() {
                                 remainingHeaderPercent = nextVal || '0%';
                             }
                         }
+
                         const colA = row[0] ? row[0].toString().trim() : '';
                         const colB = row[1] ? row[1].toString().trim() : '';
                         let colE = row[4] ? row[4].toString().trim() : '';
@@ -1008,9 +1063,6 @@ export default function App() {
                         const colH = row[7] ? row[7].toString().trim() : '';
 
                         if (colA && colB && colG) {
-                            const cleanTag = colA.toUpperCase();
-                            if (!sheetTagOrder.includes(cleanTag)) sheetTagOrder.push(cleanTag);
-                            
                             let statusKey = colG.toUpperCase();
                             if (statusKey === 'REMAINING') statusKey = 'REMAINS';
 
@@ -1029,25 +1081,20 @@ export default function App() {
                             if (statusKey === 'IN PROGRESS' && colH.toLowerCase().includes('failed')) displayRemaining = 'Failed';
                             if (statusKey === 'DONE' && colH.toLowerCase().includes('warning')) displayRemaining = 'Passed with warning';
                             
-                            if (!groups[statusKey]) groups[statusKey] = [];
-                            groups[statusKey].push({ name: colA, remaining: displayRemaining, originalIndex: totalItems });
-                            totalItems++;
+                            let disp = displayRemaining;
+                            if (statusKey === 'DONE' && disp !== 'Passed with warning') disp = '';
+                            if (statusKey === 'REMAINS') disp = '';
+
+                            rawSheetItems.push({
+                                name: colA,
+                                statusKey: statusKey,
+                                displayValue: disp,
+                                rowOriginalIndex: i
+                            });
                         }
                     }
 
-                    let allItems = [];
-                    const orderList = ['DONE', 'IN PROGRESS', 'REMAINS'];
-                    orderList.forEach(statusKey => {
-                        const groupItems = groups[statusKey] || [];
-                        groupItems.forEach(item => {
-                            let disp = item.remaining;
-                            if (statusKey === 'DONE' && disp !== 'Passed with warning') disp = '';
-                            if (statusKey === 'REMAINS') disp = '';
-                            allItems.push({ ...item, statusKey: statusKey, displayValue: disp });
-                        });
-                    });
-
-                    let normalizedItems = allItems.map(item => {
+                    let normalizedItems = rawSheetItems.map(item => {
                         let lower = item.name.toLowerCase();
                         let finalName = item.name;
                         let prefix = "";
@@ -1079,14 +1126,19 @@ export default function App() {
 
                     const valueGroups = {};
                     normalizedItems.forEach(item => {
-                        if (!valueGroups[item.displayValue]) valueGroups[item.displayValue] = [];
-                        valueGroups[item.displayValue].push(item);
+                        const groupKey = `${item.statusKey}___${item.displayValue}`;
+                        if (!valueGroups[groupKey]) valueGroups[groupKey] = [];
+                        valueGroups[groupKey].push(item);
                     });
 
                     let globalMergedLines = [];
                     const prefixes = ['Common Behaviour', 'Compatibility', 'Interruption', 'UAT'];
-                    for (const val in valueGroups) {
-                        let subGroupItems = [...valueGroups[val]];
+
+                    for (const gKey in valueGroups) {
+                        let subGroupItems = [...valueGroups[gKey]];
+                        const currentStatusKey = subGroupItems[0].statusKey;
+                        const currentDisplayValue = subGroupItems[0].displayValue;
+
                         prefixes.forEach(prefix => {
                             let currentPrefixItems = subGroupItems.filter(item => item.name.toLowerCase().startsWith(prefix.toLowerCase()));
                             subGroupItems = subGroupItems.filter(item => !currentPrefixItems.includes(item));
@@ -1099,8 +1151,8 @@ export default function App() {
                                 let hasApp = currentPrefixItems.find(i => i.name === "UAT App");
                                 let otherUATs = currentPrefixItems.filter(i => i.name !== "UAT Iframe" && i.name !== "UAT App");
                                 if (hasIframe && hasApp) {
-                                    let minIndex = Math.min(hasIframe.originalIndex, hasApp.originalIndex);
-                                    subGroupItems.push({ name: "UAT Iframe/App", isMergedString: true, mergedVal: val, originalIndex: minIndex, statusKey: hasIframe.statusKey });
+                                    let minIndex = Math.min(hasIframe.rowOriginalIndex, hasApp.rowOriginalIndex);
+                                    subGroupItems.push({ name: "UAT Iframe/App", isMergedString: true, mergedVal: currentDisplayValue, rowOriginalIndex: minIndex, statusKey: currentStatusKey });
                                 } else {
                                     if (hasIframe) subGroupItems.push(hasIframe);
                                     if (hasApp) subGroupItems.push(hasApp);
@@ -1179,8 +1231,8 @@ export default function App() {
                                     }
                                 }
                                 if (mergedName && itemsToMerge.length > 0) {
-                                    let minIndex = Math.min(...itemsToMerge.map(i => i.originalIndex || 9999));
-                                    stage1Items.push({ name: mergedName, isMergedString: true, mergedVal: val, originalIndex: minIndex, statusKey: itemsToMerge[0].statusKey });
+                                    let minIndex = Math.min(...itemsToMerge.map(i => i.rowOriginalIndex || 9999));
+                                    stage1Items.push({ name: mergedName, isMergedString: true, mergedVal: currentDisplayValue, rowOriginalIndex: minIndex, statusKey: currentStatusKey });
                                     stage1Items = stage1Items.concat(pList.filter(p => !itemsToMerge.includes(p.item)).map(p => p.item));
                                 } else {
                                     stage1Items = stage1Items.concat(pList.map(p => p.item));
@@ -1191,39 +1243,43 @@ export default function App() {
                                 let aItem = stage1Items.find(i => i.name === "Common Behaviour App");
                                 if (wItem && aItem) {
                                     stage1Items = stage1Items.filter(i => i !== wItem && i !== aItem);
-                                    stage1Items.push({ name: "Common Behaviour Webapp/App", isMergedString: true, mergedVal: val, originalIndex: Math.min(wItem.originalIndex, aItem.originalIndex), statusKey: wItem.statusKey });
+                                    stage1Items.push({ name: "Common Behaviour Webapp/App", isMergedString: true, mergedVal: currentDisplayValue, rowOriginalIndex: Math.min(wItem.rowOriginalIndex, aItem.rowOriginalIndex), statusKey: currentStatusKey });
                                 }
                             } else if (prefix === "Compatibility") {
                                 let iItem = stage1Items.find(i => i.name === "Compatibility Iframe");
                                 let aItem = stage1Items.find(i => i.name === "Compatibility App");
                                 if (iItem && aItem) {
                                     stage1Items = stage1Items.filter(i => i !== iItem && i !== aItem);
-                                    stage1Items.push({ name: "Compatibility Iframe/App", isMergedString: true, mergedVal: val, originalIndex: Math.min(iItem.originalIndex, aItem.originalIndex), statusKey: iItem.statusKey });
+                                    stage1Items.push({ name: "Compatibility Iframe/App", isMergedString: true, mergedVal: currentDisplayValue, rowOriginalIndex: Math.min(iItem.rowOriginalIndex, aItem.rowOriginalIndex), statusKey: currentStatusKey });
                                 }
                             } else if (prefix === "Interruption") {
                                 let iItem = stage1Items.find(i => i.name === "Interruption Iframe");
                                 let aItem = stage1Items.find(i => i.name === "Interruption App");
                                 if (iItem && aItem) {
                                     stage1Items = stage1Items.filter(i => i !== iItem && i !== aItem);
-                                    stage1Items.push({ name: "Interruption Iframe/App", isMergedString: true, mergedVal: val, originalIndex: Math.min(iItem.originalIndex, aItem.originalIndex), statusKey: iItem.statusKey });
+                                    stage1Items.push({ name: "Interruption Iframe/App", isMergedString: true, mergedVal: currentDisplayValue, rowOriginalIndex: Math.min(iItem.rowOriginalIndex, aItem.rowOriginalIndex), statusKey: currentStatusKey });
                                 }
                             }
                             subGroupItems = subGroupItems.concat(stage1Items);
                         });
+
                         subGroupItems.forEach(item => {
                             let textVal = item.isMergedString ? item.mergedVal : item.displayValue;
                             if (item.statusKey === 'IN PROGRESS' && textVal && textVal.includes('%')) {
                                 textVal = `Remain ${textVal}`;
                             }
                             let lineText = textVal ? `  + ${item.name}: ${textVal}\n` : `  + ${item.name}\n`;
-                            globalMergedLines.push({ text: lineText, index: item.originalIndex || 9999, statusKey: item.statusKey });
+                            globalMergedLines.push({ text: lineText, rowOriginalIndex: item.rowOriginalIndex || 9999, statusKey: item.statusKey });
                         });
                     }
+
                     ['DONE', 'IN PROGRESS', 'REMAINS'].forEach(statusKey => {
                         let groupPercent = statusKey === 'DONE' ? doneHeaderPercent : (statusKey === 'IN PROGRESS' ? inProgressHeaderPercent : remainingHeaderPercent);
                         if (groupPercent !== '0.00%' && groupPercent !== '0%' && groupPercent !== '0.0%' && parseFloat(groupPercent) !== 0) {
                             finalReport += `- ${statusKey}: ${groupPercent}\n`;
-                            let linesForSection = globalMergedLines.filter(l => l.statusKey === statusKey).sort((a, b) => a.index - b.index);
+                            let linesForSection = globalMergedLines
+                                .filter(l => l.statusKey === statusKey)
+                                .sort((a, b) => a.rowOriginalIndex - b.rowOriginalIndex);
                             linesForSection.forEach(l => { finalReport += l.text; });
                         }
                     });
@@ -1231,7 +1287,7 @@ export default function App() {
 
                 if (sheetValidationErrors.length > 0) {
                     hideLoadingToast();
-                    alert(`❌ FAILED TO GENERATE:\n\nThe progress data in the Google Sheet is invalid:\n\n${sheetValidationErrors.join('\n')}\n\nPlease go to the sheet and re-check the failed test cases listed above.`);
+                    alert(`FAILED TO GENERATE:\n\nThe progress data in the Google Sheet is invalid:\n\n${sheetValidationErrors.join('\n')}\n\nPlease check the failed test cases listed above.`);
                     return;
                 }
 
@@ -1301,7 +1357,7 @@ export default function App() {
 
                     if (!res.ok) {
                         hideLoadingToast();
-                        alert(`❌ FAILED TO GENERATE:\n\nLỗi khi truy vấn Jira (Mã lỗi: ${res.status}). Vui lòng kiểm tra lại Task Target hoặc Project Key.`);
+                        alert(`FAILED TO GENERATE:\n\nJira Query Error (Status: ${res.status}). Please verify your Target Task or Project Key.`);
                         return;
                     }
 
@@ -1352,12 +1408,10 @@ export default function App() {
                         const bracketMatch = summary.match(/\[([^\]]+)\]/);
                         const tag = bracketMatch ? bracketMatch[1].trim().toUpperCase() : 'OTHERS';
 
-                        // 1. Lọc theo Tag
                         if (jiraTagsList.length > 0 && !checkedJiraTagsMap[tag]) {
                             return; 
                         }
 
-                        // 2. Lọc động theo Priority được tick chọn
                         let pName = (issue.fields.priority && issue.fields.priority.name) ? issue.fields.priority.name.trim() : 'Unknown';
                         pName = pName.charAt(0).toUpperCase() + pName.slice(1).toLowerCase();
 
@@ -1379,7 +1433,7 @@ export default function App() {
                     }
                 });
                 
-                 const effectivePrioritiesOrder = jiraPrioritiesList.length > 0 ? jiraPrioritiesList : Object.keys(bugPriorityMap);
+                const effectivePrioritiesOrder = jiraPrioritiesList.length > 0 ? jiraPrioritiesList : Object.keys(bugPriorityMap);
 
                 let buildStatusParts = [];
                 if (bugCount > 0) {
@@ -1393,10 +1447,12 @@ export default function App() {
                 if (impCount > 0) buildStatusParts.push(`Improvement: ${impCount}`);
                 if (queCount > 0) buildStatusParts.push(`Question: ${queCount}`);
                 
-                let calculatedTicketStr = buildStatusCount + " tickets" + (buildStatusParts.length > 0 ? " (" + buildStatusParts.join(', ') + ")" : "");
+                let buildNoun = buildStatusCount === 1 ? 'ticket' : 'tickets';
+                let totalNoun = totalBoardTickets === 1 ? 'ticket' : 'tickets';
+                let calculatedTicketStr = `${buildStatusCount} ${buildNoun}` + (buildStatusParts.length > 0 ? " (" + buildStatusParts.join(', ') + ")" : "");
 
                 let scopeText = selectedScopes.join(', ') || 'Logic UI, Interruption, Promotion, Sound, UI, Tutorial/Trial, Compatibility';
-                let summarySection = `\`\`\`\n——————————————————\nA. [SUMMARY]\n- Scope of testing: ${scopeText}.\n- Testing Status: ${testingStatus || 'In-testing'}\n- Build status: ${calculatedTicketStr} / Total: ${totalBoardTickets} tickets\n`;
+                let summarySection = `\`\`\`\n——————————————————\nA. [SUMMARY]\n- Scope of testing: ${scopeText}.\n- Testing Status: ${testingStatus || 'In-testing'}\n- Build status: ${calculatedTicketStr} / Total: ${totalBoardTickets} ${totalNoun}\n`;
                 finalReport = summarySection + finalReport;
                 const romanize = (num) => {
                     const lookup = { M: 1000, CM: 900, d: 500, CD: 400, C: 100, XC: 90, L: 50, XL: 40, X: 10, IX: 9, V: 5, IV: 4, I: 1 };
@@ -1423,7 +1479,6 @@ export default function App() {
                                         const tickets = typeContainers['BUG'][tag][priority];
                                         jiraBody += `- ${priority}: ${tickets.length}\n`;
                                         
-                                        // In danh sách chi tiết tickets nếu tổng <= 5 hoặc là các priority cao đầu tiên
                                         const isHighPriority = priority.toLowerCase().includes('high');
                                         if (buildStatusCount <= 5 || isHighPriority) {
                                             tickets.forEach(t => { jiraBody += `    + ${t.key} - ${t.summary}\n`; });
@@ -1531,7 +1586,7 @@ export default function App() {
             }
 
             if (chkPreprod) {
-                const preprodLines = preprodInputValue.split('\n').map(l => l.trim()).filter(l => l !== "");
+                const preprodLines = preprodInputValue.split('\n').map(l => l.trim()).filter(l => l !== "") : [];
                 if (preprodLines.length > 0) {
                     let firstLineClean = preprodLines[0].toLowerCase().replace(/^-\s*/, '');
                     if (firstLineClean.startsWith("preprod")) {
@@ -1657,6 +1712,37 @@ export default function App() {
                 </div>
 
                 <div className="flex items-center gap-4">
+                    {workspaces.length > 0 && jiraToken && (
+                        <div className="flex items-center gap-2">
+                            <label className="text-xs font-semibold text-slate-600">Workspace:</label>
+                            <select 
+                                value={jiraCloudId || ''} 
+                                onChange={e => {
+                                    const newCloudId = e.target.value;
+                                    setJiraCloudId(newCloudId);
+                                    localStorage.setItem('jira_cloud_id', newCloudId);
+                                    setAvailableProjects([]);
+                                    setEpicOptions([]);
+                                    setEpicTasksList([]);
+                                    setSelectedEpicKey('');
+                                    setSelectedTaskKey('');
+                                    setJiraStatuses([]);
+                                    setJiraPrioritiesList([]);
+                                    setJiraTagsList([]);
+                                    setAuthTrigger(prev => prev + 1);
+                                    showToast("Switched Jira Workspace", 'success');
+                                }}
+                                className="h-10 px-3 bg-white border border-slate-300 rounded-xl text-xs font-medium text-slate-800 focus:outline-none focus:border-indigo-600 shadow-sm"
+                            >
+                                {workspaces.map(ws => (
+                                    <option key={ws.id} value={ws.id}>
+                                        {ws.name} ({extractDomain(ws.url)})
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+                    )}
+
                     <div className="flex items-center gap-3 bg-white/90 border border-slate-200 px-4 py-2 rounded-2xl backdrop-blur-md shadow-sm">
                         <span className={`w-2.5 h-2.5 rounded-full ${jiraToken && jiraCloudId ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)]' : 'bg-slate-400'}`}></span>
                         <span className="text-xs font-semibold text-slate-700">
@@ -1689,7 +1775,7 @@ export default function App() {
                     </h2>
 
                     <div className="flex flex-col gap-1.5">
-                        <label className="text-xs font-semibold text-slate-600">1. Project Key (Board dự án lớn)</label>
+                        <label className="text-xs font-semibold text-slate-600">1. Project Key (Board Project)</label>
                         <div className="flex gap-2">
                             <div className="flex-1">
                                 <SearchableDropdown 
@@ -1700,7 +1786,7 @@ export default function App() {
                                         setSheetName(val);
                                         setFormErrors(prev => prev.filter(err => err !== "Project Key"));
                                     }} 
-                                    placeholder="Chọn Project Key (vd: STR)..."
+                                    placeholder="Select Project Key (e.g. STR)..."
                                     isError={formErrors.includes("Project Key")}
                                 />
                             </div>
@@ -1714,20 +1800,20 @@ export default function App() {
                         <div className="flex flex-col gap-3 p-3 bg-indigo-50/40 rounded-xl border border-indigo-100">
                             <div className="flex flex-col gap-1.5">
                                 <div className="flex justify-between items-center">
-                                    <label className="text-xs font-bold text-indigo-900">2. Chọn Epic (Game)</label>
+                                    <label className="text-xs font-bold text-indigo-900">2. Select Epic (Game)</label>
                                     {isLoadingEpics && <span className="text-[10px] text-indigo-600 animate-pulse font-medium">Syncing Epics...</span>}
                                 </div>
                                 <SearchableDropdown
                                     options={epicOptions}
                                     value={selectedEpicKey}
                                     onChange={handleEpicSelect}
-                                    placeholder={isLoadingEpics ? "Đang đồng bộ Epics..." : "Chọn Epic của Game..."}
+                                    placeholder={isLoadingEpics ? "Syncing Epics..." : "Select Epic..."}
                                 />
                             </div>
 
                             <div className="flex flex-col gap-1.5">
                                 <div className="flex justify-between items-center">
-                                    <label className="text-xs font-bold text-indigo-900">3. Task Target ([QC] Bugs List)</label>
+                                    <label className="text-xs font-bold text-indigo-900">3. Target Task ([QC] Bugs List)</label>
                                     {isLoadingTasks && <span className="text-[10px] text-indigo-600 animate-pulse font-medium">Loading Tasks...</span>}
                                 </div>
                                 <SearchableDropdown
@@ -1737,7 +1823,7 @@ export default function App() {
                                         setSelectedTaskKey(val);
                                         syncSubTaskMetadata(val);
                                     }}
-                                    placeholder={isLoadingTasks ? "Đang lấy task..." : "Chọn Task (Mặc định [QC] Bugs List)..."}
+                                    placeholder={isLoadingTasks ? "Loading tasks..." : "Select Task (Default [QC] Bugs List)..."}
                                     isError={formErrors.includes("Target Task / [QC] Bugs List")}
                                 />
                             </div>
@@ -1810,7 +1896,6 @@ export default function App() {
                         </div>
                     </div>
 
-                    {/* JIRA STATUS ACCORDION */}
                     <div className="bg-slate-50 border border-slate-200 rounded-xl overflow-hidden mt-1">
                         <button type="button" onClick={() => setIsAccordionOpen(!isAccordionOpen)} className="w-full px-4 py-3 flex items-center justify-between text-xs font-bold text-slate-700 hover:bg-slate-100 transition-all">
                             <span>Jira Status Settings</span>
@@ -1821,7 +1906,7 @@ export default function App() {
                             <div className="p-3 border-t border-slate-200 bg-slate-50">
                                 {statusPillList.length === 0 ? (
                                     <div className="p-4 text-center text-xs text-slate-400 italic">
-                                        Chưa có trạng thái nào. Vui lòng chọn Project Key và bấm <strong>↻ Sync</strong>.
+                                        No status available. Please select a Project Key and click <strong>↻ Sync</strong>.
                                     </div>
                                 ) : (
                                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -2037,7 +2122,6 @@ export default function App() {
                         })}
                     </div>
 
-                    {/* DYNAMIC PRIORITY ACCORDION */}
                     {jiraPrioritiesList.length > 0 && (
                         <div className="bg-slate-50 border border-slate-200 rounded-xl overflow-hidden mt-1">
                             <button type="button" onClick={() => setIsPriorityAccordionOpen(!isPriorityAccordionOpen)} className="w-full px-4 py-3 flex items-center justify-between text-xs font-bold text-slate-700 hover:bg-slate-100 transition-all">
@@ -2071,7 +2155,6 @@ export default function App() {
                         </div>
                     )}
 
-                    {/* TAGS ACCORDION */}
                     {jiraTagsList.length > 0 && (
                         <div className="bg-slate-50 border border-slate-200 rounded-xl overflow-hidden mt-1">
                             <button type="button" onClick={() => setIsTagAccordionOpen(!isTagAccordionOpen)} className="w-full px-4 py-3 flex items-center justify-between text-xs font-bold text-slate-700 hover:bg-slate-100 transition-all">
