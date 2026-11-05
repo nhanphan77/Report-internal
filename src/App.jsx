@@ -91,7 +91,9 @@ const SearchableDropdown = React.forwardRef(({ options, value, onChange, placeho
 let globalRefreshPromise = null;
 
 export default function App() {
-    const [isLoggingIn, setIsLoggingIn] = useState(() => !!new URLSearchParams(window.location.search).get('code'));
+    const authLock = useRef(false);
+    const disconnectLock = useRef(false);
+    const [isLoggingIn, setIsLoggingIn] = useState(false);
     
     const [availableProjects, setAvailableProjects] = useState([]);
     const [availableSheetTabs, setAvailableSheetTabs] = useState([]);
@@ -184,6 +186,9 @@ export default function App() {
     };
 
     const handleJiraDisconnect = () => {
+        if (disconnectLock.current) return;
+        disconnectLock.current = true;
+
         localStorage.removeItem('jira_access_token');
         localStorage.removeItem('jira_refresh_token');
         localStorage.removeItem('jira_cloud_id');
@@ -194,7 +199,11 @@ export default function App() {
         setAvailableBoards([]);
         setJiraSprints([]);
         setJiraParents([]);
-        showToast("Disconnected Jira.", 'error');
+        showToast("Jira Session Expired. Please Connect SSO again.", 'error');
+
+        setTimeout(() => {
+            disconnectLock.current = false;
+        }, 2000);
     };
 
     const refreshJiraToken = async () => {
@@ -203,7 +212,7 @@ export default function App() {
         globalRefreshPromise = (async () => {
             try {
                 const storedRefreshToken = localStorage.getItem('jira_refresh_token');
-                if (!storedRefreshToken) throw new Error("No refresh token available");
+                if (!storedRefreshToken) return null;
                 
                 const res = await fetch('/api/jira-refresh', {
                     method: 'POST',
@@ -212,9 +221,7 @@ export default function App() {
                 });
                 const data = await res.json();
                 
-                if (!res.ok || data.error) {
-                    throw new Error(data.error || 'Failed to refresh token');
-                }
+                if (!res.ok || data.error) return null;
                 
                 localStorage.setItem('jira_access_token', data.access_token);
                 localStorage.setItem('jira_refresh_token', data.refresh_token);
@@ -222,6 +229,8 @@ export default function App() {
                 setJiraRefreshToken(data.refresh_token);
                 
                 return data.access_token;
+            } catch (err) {
+                return null;
             } finally {
                 globalRefreshPromise = null;
             }
@@ -232,10 +241,8 @@ export default function App() {
 
     const fetchWithJiraAuth = async (url, options = {}) => {
         let currentToken = localStorage.getItem('jira_access_token');
-        let currentRefresh = localStorage.getItem('jira_refresh_token');
-        
-        if (!currentToken && !currentRefresh) {
-            throw new Error("Jira_Session_Expired");
+        if (!currentToken || currentToken === 'null' || currentToken === 'undefined') {
+            throw new Error("JIRA_SESSION_EXPIRED");
         }
 
         let res = await fetch(url, {
@@ -244,21 +251,18 @@ export default function App() {
         });
         
         if (res.status === 401) {
-            try {
-                currentToken = await refreshJiraToken();
-                res = await fetch(url, {
-                    ...options,
-                    headers: { ...options.headers, 'Authorization': `Bearer ${currentToken}` }
-                });
-                
-                if (res.status === 401) {
-                    throw new Error("Refreshed_Token_Unauthorized");
-                }
-            } catch (err) {
-                if (localStorage.getItem('jira_refresh_token')) {
-                    handleJiraDisconnect();
-                }
-                throw new Error("Jira_Session_Expired");
+            currentToken = await refreshJiraToken();
+            if (!currentToken) {
+                throw new Error("JIRA_SESSION_EXPIRED");
+            }
+            
+            res = await fetch(url, {
+                ...options,
+                headers: { ...options.headers, 'Authorization': `Bearer ${currentToken}` }
+            });
+            
+            if (res.status === 401) {
+                throw new Error("JIRA_SESSION_EXPIRED");
             }
         }
         return res;
@@ -279,8 +283,8 @@ export default function App() {
                     }
                 })
                 .catch(e => {
-                    if (e.message !== "Jira_Session_Expired") {
-                        console.warn("Project sync failed:", e.message);
+                    if (e.message === "JIRA_SESSION_EXPIRED") {
+                        handleJiraDisconnect();
                     }
                 });
         } else {
@@ -338,8 +342,12 @@ export default function App() {
         const handleAuth = async () => {
             const urlParams = new URLSearchParams(window.location.search);
             const code = urlParams.get('code');
-            if (code) {
+            
+            if (code && !authLock.current) {
+                authLock.current = true;
                 setIsLoggingIn(true);
+                window.history.replaceState({}, document.title, window.location.pathname);
+                
                 showToast('Processing Jira SSO login...', 'loading');
                 try {
                     const redirectUri = window.location.origin + window.location.pathname;
@@ -376,7 +384,6 @@ export default function App() {
                     setJiraToken(data.access_token);
                     setJiraRefreshToken(data.refresh_token);
 
-                    window.history.replaceState({}, document.title, window.location.pathname);
                     hideLoadingToast();
                     showToast("Connected to Jira SSO successfully!", 'success');
                 } catch (e) {
@@ -538,7 +545,9 @@ export default function App() {
                             });
                         });
                     }
-                } catch (e) { }
+                } catch (e) {
+                    if (e.message === "JIRA_SESSION_EXPIRED") throw e;
+                }
 
                 try {
                     const bRes = await fetchWithJiraAuth(`https://api.atlassian.com/ex/jira/${jiraCloudId}/rest/agile/1.0/board?projectKeyOrId=${key}`, { headers: { 'Accept': 'application/json' } });
@@ -559,11 +568,15 @@ export default function App() {
                                         const sData = await sRes.json();
                                         sData.values?.forEach(sp => sprintsMap.set(sp.id, sp.name));
                                     }
-                                } catch (e) {}
+                                } catch (e) {
+                                    if (e.message === "JIRA_SESSION_EXPIRED") throw e;
+                                }
                             }
                         }
                     }
-                } catch (e) { }
+                } catch (e) {
+                    if (e.message === "JIRA_SESSION_EXPIRED") throw e;
+                }
 
                 try {
                     const eRes = await fetchWithJiraAuth(`https://api.atlassian.com/ex/jira/${jiraCloudId}/rest/api/3/search/jql`, {
@@ -575,7 +588,9 @@ export default function App() {
                         const eData = await eRes.json();
                         eData.issues?.forEach(iss => parentsMap.set(iss.key, iss.fields?.summary || iss.key));
                     }
-                } catch (e) { }
+                } catch (e) {
+                    if (e.message === "JIRA_SESSION_EXPIRED") throw e;
+                }
             }
 
             try {
@@ -624,7 +639,9 @@ export default function App() {
                         return next;
                     });
                 }
-            } catch (e) {}
+            } catch (e) {
+                if (e.message === "JIRA_SESSION_EXPIRED") throw e;
+            }
 
             if (statusSet.size > 0) {
                 const list = Array.from(statusSet);
@@ -673,7 +690,9 @@ export default function App() {
         } catch (err) {
             setJiraStatuses([]);
             hideLoadingToast();
-            if (err.message !== "Jira_Session_Expired") {
+            if (err.message === "JIRA_SESSION_EXPIRED") {
+                handleJiraDisconnect();
+            } else {
                 showToast("Auto-sync failed: " + err.message, 'error');
             }
         }
@@ -1195,7 +1214,9 @@ export default function App() {
                         if (pData && pData.key) realKey = pData.key;
                         if (pData && pData.style) projectStyle = pData.style; 
                     }
-                } catch (e) { }
+                } catch (e) {
+                    if (e.message === "JIRA_SESSION_EXPIRED") throw e;
+                }
 
                 let boardId = selectedBoardId;
                 let boardPrefix = '';
@@ -1228,7 +1249,9 @@ export default function App() {
                                 parentTaskKeys = qcData.issues.map(iss => iss.key);
                             }
                         }
-                    } catch(e) {}
+                    } catch(e) {
+                        if (e.message === "JIRA_SESSION_EXPIRED") throw e;
+                    }
 
                     if (parentTaskKeys.length > 0) {
                         jqlString = `parent in (${parentTaskKeys.map(k => `"${k}"`).join(',')}) AND issuetype in (Bug, "Bug/Defect", Improvement, Question, "Sub-task", "Sub-Bug") ORDER BY created DESC`;
@@ -1422,7 +1445,11 @@ export default function App() {
                 if (jiraBody.trim().length > 0) jiraReportSegment = "B. [TICKETS]\n" + jiraBody;
             } catch (error) {
                 hideLoadingToast();
-                showToast("Jira Error: " + error.message, 'error');
+                if (error.message === "JIRA_SESSION_EXPIRED") {
+                    handleJiraDisconnect();
+                } else {
+                    showToast("Jira Error: " + error.message, 'error');
+                }
                 return;
             }
 
@@ -1605,7 +1632,7 @@ export default function App() {
                             {jiraToken && jiraCloudId ? "Jira Connected" : "Jira Disconnected"}
                         </span>
                         {jiraToken && jiraCloudId ? (
-                            <button onClick={handleJiraDisconnect} className="text-xs px-3 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl border border-slate-300 transition-all">
+                            <button onClick={() => handleJiraDisconnect()} className="text-xs px-3 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl border border-slate-300 transition-all">
                                 Disconnect
                             </button>
                         ) : (
