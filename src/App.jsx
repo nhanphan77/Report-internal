@@ -171,6 +171,8 @@ export default function App() {
 
     const [jiraParents, setJiraParents] = useState([]);
     const [selectedParent, setSelectedParent] = useState('All');
+    const [availableBoards, setAvailableBoards] = useState([]);
+const [selectedBoardId, setSelectedBoardId] = useState('');
 
     const [epicOptions, setEpicOptions] = useState([]);
     const [selectedEpicKey, setSelectedEpicKey] = useState('');
@@ -537,6 +539,7 @@ export default function App() {
                 if (Array.isArray(state.availableSheetTabs)) setAvailableSheetTabs(state.availableSheetTabs);
                 if (state.selectedEpicKey) setSelectedEpicKey(state.selectedEpicKey);
                 if (state.selectedTaskKey) setSelectedTaskKey(state.selectedTaskKey);
+                if (state.selectedBoardId) setSelectedBoardId(state.selectedBoardId);
             } catch (e) { }
         } else {
             const initMap = {};
@@ -604,7 +607,8 @@ export default function App() {
             checkedJiraStatuses_Unverified: checkedJiraUnverified, checkedJiraStatuses_Pending: checkedJiraPending,
             jiraParents, selectedParent,
             jiraTagsList, checkedJiraTagsMap, jiraPrioritiesList, checkedPrioritiesMap, availableSheetTabs,
-            selectedEpicKey, selectedTaskKey
+            selectedEpicKey, selectedTaskKey,
+            selectedBoardId 
         };
         localStorage.setItem('last_session_state', JSON.stringify(config));
     }, [
@@ -757,6 +761,20 @@ export default function App() {
                         });
                     }
                 } catch (e) { }
+
+                try {
+                    const bRes = await fetchWithJiraAuth(`https://api.atlassian.com/ex/jira/${jiraCloudId}/rest/agile/1.0/board?projectKeyOrId=${key}`, { headers: { 'Accept': 'application/json' } });
+                    if (bRes.ok) {
+                        const bData = await bRes.json();
+                        if (bData && bData.values && bData.values.length > 0) {
+                            const fetchedBoards = bData.values.map(b => ({ id: b.id, name: b.name }));
+                            setAvailableBoards(fetchedBoards);
+                            setSelectedBoardId(fetchedBoards[0].id);
+                        }
+                    }
+                } catch (e) {
+                    console.warn("Could not load boards for project:", e);
+                }
 
                 try {
                     const eRes = await fetchWithJiraAuth(`https://api.atlassian.com/ex/jira/${jiraCloudId}/rest/api/3/search/jql`, {
@@ -1394,10 +1412,14 @@ export default function App() {
                 const baseUrl = currentWorkspace ? currentWorkspace.url : `https://enotion.atlassian.net`;
                 const pathPrefix = (projectStyle === 'classic') ? '/jira/software/c/projects' : '/jira/software/projects';
 
-                const detectedBoardId = await fetchBoardIdByProject(jiraCloudId, realKey, fetchWithJiraAuth);
+                let finalBoardId = selectedBoardId;
 
-                autoJiraLink = detectedBoardId 
-                    ? `${baseUrl}${pathPrefix}/${realKey}/boards/${detectedBoardId}`
+                if (!finalBoardId) {
+                    finalBoardId = await fetchBoardIdByProject(jiraCloudId, realKey, fetchWithJiraAuth);
+                }
+
+                autoJiraLink = finalBoardId 
+                    ? `${baseUrl}${pathPrefix}/${realKey}/boards/${finalBoardId}`
                     : `${baseUrl}${pathPrefix}/${realKey}/boards`;
 
                 const typeContainers = { 'BUG': {}, 'IMPROVEMENT': {}, 'QUESTION': {} };
@@ -1852,12 +1874,26 @@ export default function App() {
                             </div>
                         </div>
                     ) : (
-                        <div className="flex flex-col gap-1.5">
-                            <label className="text-xs font-semibold text-slate-600">Epic Filter</label>
-                            <select value={selectedParent} onChange={e => setSelectedParent(e.target.value)} className="h-10 px-3 bg-slate-50 border border-slate-300 rounded-xl text-xs font-medium text-slate-800 focus:outline-none focus:border-indigo-600">
-                                <option value="All">Default</option>
-                                {jiraParents.map(p => <option key={p.key} value={p.key}>{p.name} ({p.key})</option>)}
-                            </select>
+                        <div className="flex flex-col gap-3">
+                            {availableBoards.length > 0 && (
+                                <div className="flex flex-col gap-1.5 bg-indigo-50/40 p-3 rounded-xl border border-indigo-100">
+                                    <label className="text-xs font-bold text-indigo-900">Select Board</label>
+                                    <SearchableDropdown
+                                        options={availableBoards.map(b => ({ value: b.id, label: b.name }))}
+                                        value={selectedBoardId}
+                                        onChange={val => setSelectedBoardId(val)}
+                                        placeholder="Select a board..."
+                                    />
+                                </div>
+                            )}
+
+                            <div className="flex flex-col gap-1.5">
+                                <label className="text-xs font-semibold text-slate-600">Epic Filter</label>
+                                <select value={selectedParent} onChange={e => setSelectedParent(e.target.value)} className="h-10 px-3 bg-slate-50 border border-slate-300 rounded-xl text-xs font-medium text-slate-800 focus:outline-none focus:border-indigo-600">
+                                    <option value="All">Default</option>
+                                    {jiraParents.map(p => <option key={p.key} value={p.key}>{p.name} ({p.key})</option>)}
+                                </select>
+                            </div>
                         </div>
                     )}
 
