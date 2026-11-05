@@ -91,6 +91,8 @@ const SearchableDropdown = React.forwardRef(({ options, value, onChange, placeho
 let globalRefreshPromise = null;
 
 export default function App() {
+    const [isLoggingIn, setIsLoggingIn] = useState(() => !!new URLSearchParams(window.location.search).get('code'));
+    
     const [availableProjects, setAvailableProjects] = useState([]);
     const [availableSheetTabs, setAvailableSheetTabs] = useState([]);
     const [availableBoards, setAvailableBoards] = useState([]);
@@ -263,6 +265,8 @@ export default function App() {
     };
 
     useEffect(() => {
+        if (isLoggingIn) return; 
+
         if (jiraToken && jiraCloudId) {
             fetchWithJiraAuth(`https://api.atlassian.com/ex/jira/${jiraCloudId}/rest/api/2/project`, { headers: { 'Accept': 'application/json' } })
                 .then(res => {
@@ -282,7 +286,7 @@ export default function App() {
         } else {
             setAvailableProjects([]);
         }
-    }, [jiraToken, jiraCloudId]);
+    }, [jiraToken, jiraCloudId, isLoggingIn]);
 
     useEffect(() => {
         const savedData = localStorage.getItem('last_session_state');
@@ -335,6 +339,7 @@ export default function App() {
             const urlParams = new URLSearchParams(window.location.search);
             const code = urlParams.get('code');
             if (code) {
+                setIsLoggingIn(true);
                 showToast('Processing Jira SSO login...', 'loading');
                 try {
                     const redirectUri = window.location.origin + window.location.pathname;
@@ -361,16 +366,15 @@ export default function App() {
 
                     localStorage.setItem('jira_access_token', data.access_token);
                     localStorage.setItem('jira_refresh_token', data.refresh_token);
+                    
+                    if (resourcesData.length > 0) {
+                        const cId = resourcesData[0].id;
+                        setJiraCloudId(cId);
+                        localStorage.setItem('jira_cloud_id', cId);
+                    }
+                    
                     setJiraToken(data.access_token);
                     setJiraRefreshToken(data.refresh_token);
-
-                    if (data.cloud_id) {
-                        setJiraCloudId(data.cloud_id);
-                        localStorage.setItem('jira_cloud_id', data.cloud_id);
-                    } else if (resourcesData.length > 0) {
-                        setJiraCloudId(resourcesData[0].id);
-                        localStorage.setItem('jira_cloud_id', resourcesData[0].id);
-                    }
 
                     window.history.replaceState({}, document.title, window.location.pathname);
                     hideLoadingToast();
@@ -378,6 +382,8 @@ export default function App() {
                 } catch (e) {
                     hideLoadingToast();
                     showToast("Jira Login Error: " + e.message, 'error');
+                } finally {
+                    setIsLoggingIn(false);
                 }
             }
         };
@@ -403,6 +409,8 @@ export default function App() {
     ]);
 
     useEffect(() => {
+        if (isLoggingIn) return;
+
         const key = sheetName.trim();
         if (!key || !jiraToken || !jiraCloudId) return;
 
@@ -414,7 +422,7 @@ export default function App() {
         return () => {
             if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
         };
-    }, [sheetName, workspaceMode]);
+    }, [sheetName, workspaceMode, isLoggingIn]);
 
     const initiateJiraSSO = () => {
         const redirectUri = encodeURIComponent(window.location.origin + window.location.pathname);
