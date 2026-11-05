@@ -88,6 +88,8 @@ const SearchableDropdown = React.forwardRef(({ options, value, onChange, placeho
     );
 });
 
+let globalRefreshPromise = null;
+
 export default function App() {
     const [availableProjects, setAvailableProjects] = useState([]);
     const [availableSheetTabs, setAvailableSheetTabs] = useState([]);
@@ -194,20 +196,32 @@ export default function App() {
     };
 
     const refreshJiraToken = async () => {
-        const storedRefreshToken = localStorage.getItem('jira_refresh_token');
-        if (!storedRefreshToken) throw new Error("No refresh token available");
-        const res = await fetch('/api/jira-refresh', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ refreshToken: storedRefreshToken })
-        });
-        const data = await res.json();
-        if (!res.ok || data.error) throw new Error(data.error || 'Failed to refresh token');
-        setJiraToken(data.access_token);
-        setJiraRefreshToken(data.refresh_token);
-        localStorage.setItem('jira_access_token', data.access_token);
-        localStorage.setItem('jira_refresh_token', data.refresh_token);
-        return data.access_token;
+        if (globalRefreshPromise) return globalRefreshPromise;
+
+        globalRefreshPromise = (async () => {
+            try {
+                const storedRefreshToken = localStorage.getItem('jira_refresh_token');
+                if (!storedRefreshToken) throw new Error("No refresh token available");
+                const res = await fetch('/api/jira-refresh', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ refreshToken: storedRefreshToken })
+                });
+                const data = await res.json();
+                if (!res.ok || data.error) throw new Error(data.error || 'Failed to refresh token');
+                
+                setJiraToken(data.access_token);
+                setJiraRefreshToken(data.refresh_token);
+                localStorage.setItem('jira_access_token', data.access_token);
+                localStorage.setItem('jira_refresh_token', data.refresh_token);
+                
+                return data.access_token;
+            } finally {
+                globalRefreshPromise = null;
+            }
+        })();
+
+        return globalRefreshPromise;
     };
 
     const fetchWithJiraAuth = async (url, options = {}) => {
@@ -328,17 +342,19 @@ export default function App() {
                     setWorkspaces(resourcesData);
                     localStorage.setItem('jira_workspaces', JSON.stringify(resourcesData));
 
-                    if (resourcesData.length > 0) {
-                        setJiraCloudId(resourcesData[0].id);
-                        localStorage.setItem('jira_cloud_id', resourcesData[0].id);
-                    }			
-
                     setJiraToken(data.access_token);
                     setJiraRefreshToken(data.refresh_token);
-                    setJiraCloudId(data.cloud_id);
                     localStorage.setItem('jira_access_token', data.access_token);
                     localStorage.setItem('jira_refresh_token', data.refresh_token);
-                    localStorage.setItem('jira_cloud_id', data.cloud_id);
+
+                    if (data.cloud_id) {
+                        setJiraCloudId(data.cloud_id);
+                        localStorage.setItem('jira_cloud_id', data.cloud_id);
+                    } else if (resourcesData.length > 0) {
+                        setJiraCloudId(resourcesData[0].id);
+                        localStorage.setItem('jira_cloud_id', resourcesData[0].id);
+                    }
+
                     window.history.replaceState({}, document.title, window.location.pathname);
                     hideLoadingToast();
                     showToast("Connected to Jira SSO successfully!", 'success');
