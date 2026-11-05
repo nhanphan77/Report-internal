@@ -192,7 +192,7 @@ export default function App() {
         setAvailableBoards([]);
         setJiraSprints([]);
         setJiraParents([]);
-        showToast("Disconnected Jira.", 'success');
+        showToast("Disconnected Jira.", 'error');
     };
 
     const refreshJiraToken = async () => {
@@ -202,18 +202,22 @@ export default function App() {
             try {
                 const storedRefreshToken = localStorage.getItem('jira_refresh_token');
                 if (!storedRefreshToken) throw new Error("No refresh token available");
+                
                 const res = await fetch('/api/jira-refresh', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ refreshToken: storedRefreshToken })
                 });
                 const data = await res.json();
-                if (!res.ok || data.error) throw new Error(data.error || 'Failed to refresh token');
                 
-                setJiraToken(data.access_token);
-                setJiraRefreshToken(data.refresh_token);
+                if (!res.ok || data.error) {
+                    throw new Error(data.error || 'Failed to refresh token');
+                }
+                
                 localStorage.setItem('jira_access_token', data.access_token);
                 localStorage.setItem('jira_refresh_token', data.refresh_token);
+                setJiraToken(data.access_token);
+                setJiraRefreshToken(data.refresh_token);
                 
                 return data.access_token;
             } finally {
@@ -226,6 +230,12 @@ export default function App() {
 
     const fetchWithJiraAuth = async (url, options = {}) => {
         let currentToken = localStorage.getItem('jira_access_token');
+        let currentRefresh = localStorage.getItem('jira_refresh_token');
+        
+        if (!currentToken && !currentRefresh) {
+            throw new Error("Jira_Session_Expired");
+        }
+
         let res = await fetch(url, {
             ...options,
             headers: { ...options.headers, 'Authorization': `Bearer ${currentToken}` }
@@ -238,12 +248,15 @@ export default function App() {
                     ...options,
                     headers: { ...options.headers, 'Authorization': `Bearer ${currentToken}` }
                 });
+                
                 if (res.status === 401) {
-                    throw new Error("Refreshed token is still unauthorized");
+                    throw new Error("Refreshed_Token_Unauthorized");
                 }
             } catch (err) {
-                handleJiraDisconnect();
-                throw new Error("Jira session expired. Please Connect SSO again.");
+                if (localStorage.getItem('jira_refresh_token')) {
+                    handleJiraDisconnect();
+                }
+                throw new Error("Jira_Session_Expired");
             }
         }
         return res;
@@ -253,7 +266,7 @@ export default function App() {
         if (jiraToken && jiraCloudId) {
             fetchWithJiraAuth(`https://api.atlassian.com/ex/jira/${jiraCloudId}/rest/api/2/project`, { headers: { 'Accept': 'application/json' } })
                 .then(res => {
-                    if (!res.ok) throw new Error("Failed");
+                    if (!res.ok) throw new Error("Failed to load projects.");
                     return res.json();
                 })
                 .then(data => {
@@ -261,7 +274,11 @@ export default function App() {
                         setAvailableProjects(data.map(p => ({ value: p.key, label: `${p.key} - ${p.name}` })));
                     }
                 })
-                .catch(e => console.error("Failed to load projects", e));
+                .catch(e => {
+                    if (e.message !== "Jira_Session_Expired") {
+                        console.warn("Project sync failed:", e.message);
+                    }
+                });
         } else {
             setAvailableProjects([]);
         }
@@ -342,10 +359,10 @@ export default function App() {
                     setWorkspaces(resourcesData);
                     localStorage.setItem('jira_workspaces', JSON.stringify(resourcesData));
 
-                    setJiraToken(data.access_token);
-                    setJiraRefreshToken(data.refresh_token);
                     localStorage.setItem('jira_access_token', data.access_token);
                     localStorage.setItem('jira_refresh_token', data.refresh_token);
+                    setJiraToken(data.access_token);
+                    setJiraRefreshToken(data.refresh_token);
 
                     if (data.cloud_id) {
                         setJiraCloudId(data.cloud_id);
@@ -515,32 +532,30 @@ export default function App() {
                     }
                 } catch (e) { }
 
-               const bRes = await fetchWithJiraAuth(`https://api.atlassian.com/ex/jira/${jiraCloudId}/rest/agile/1.0/board?projectKeyOrId=${key}`, { headers: { 'Accept': 'application/json' } });
-                if (bRes.ok) {
-                    const bData = await bRes.json();
-                    if (!bData || !bData.values || bData.values.length === 0) {
-                        throw new Error(`No board found for Project Key: ${key}`);
-                    }
-                    
-                    const fetchedBoards = bData.values.map(b => ({ id: b.id, name: b.name }));
-                    setAvailableBoards(fetchedBoards);
+                try {
+                    const bRes = await fetchWithJiraAuth(`https://api.atlassian.com/ex/jira/${jiraCloudId}/rest/agile/1.0/board?projectKeyOrId=${key}`, { headers: { 'Accept': 'application/json' } });
+                    if (bRes.ok) {
+                        const bData = await bRes.json();
+                        if (bData && bData.values && bData.values.length > 0) {
+                            const fetchedBoards = bData.values.map(b => ({ id: b.id, name: b.name }));
+                            setAvailableBoards(fetchedBoards);
 
-                    const exactBoard = fetchedBoards.find(b => b.name.includes(key));
-                    const initialBoardId = exactBoard ? exactBoard.id : fetchedBoards[0].id;
-                    setSelectedBoardId(initialBoardId);
-                    
-                    if (workspaceMode === 'old') {
-                        try {
-                            const sRes = await fetchWithJiraAuth(`https://api.atlassian.com/ex/jira/${jiraCloudId}/rest/agile/1.0/board/${initialBoardId}/sprint?state=active,future`, { headers: { 'Accept': 'application/json' } });
-                            if (sRes.ok) {
-                                const sData = await sRes.json();
-                                sData.values?.forEach(sp => sprintsMap.set(sp.id, sp.name));
+                            const exactBoard = fetchedBoards.find(b => b.name.includes(key));
+                            const initialBoardId = exactBoard ? exactBoard.id : fetchedBoards[0].id;
+                            setSelectedBoardId(initialBoardId);
+                            
+                            if (workspaceMode === 'old') {
+                                try {
+                                    const sRes = await fetchWithJiraAuth(`https://api.atlassian.com/ex/jira/${jiraCloudId}/rest/agile/1.0/board/${initialBoardId}/sprint?state=active,future`, { headers: { 'Accept': 'application/json' } });
+                                    if (sRes.ok) {
+                                        const sData = await sRes.json();
+                                        sData.values?.forEach(sp => sprintsMap.set(sp.id, sp.name));
+                                    }
+                                } catch (e) {}
                             }
-                        } catch (e) {}
+                        }
                     }
-                } else {
-                    throw new Error(`Project Key does not exist or access denied: ${key}`);
-                }
+                } catch (e) { }
 
                 try {
                     const eRes = await fetchWithJiraAuth(`https://api.atlassian.com/ex/jira/${jiraCloudId}/rest/api/3/search/jql`, {
@@ -650,7 +665,9 @@ export default function App() {
         } catch (err) {
             setJiraStatuses([]);
             hideLoadingToast();
-            showToast("Auto-sync failed: " + err.message, 'error');
+            if (err.message !== "Jira_Session_Expired") {
+                showToast("Auto-sync failed: " + err.message, 'error');
+            }
         }
     };
 
