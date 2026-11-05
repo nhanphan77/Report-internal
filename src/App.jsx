@@ -98,6 +98,24 @@ const SearchableDropdown = React.forwardRef(({ options, value, onChange, placeho
 
 let refreshPromise = null;
 
+
+const fetchBoardIdByProject = async (jiraCloudId, projectKey, fetchWithAuth) => {
+    try {
+        const res = await fetchWithAuth(`https://api.atlassian.com/ex/jira/${jiraCloudId}/rest/agile/1.0/board?projectKeyOrId=${projectKey}`, {
+            headers: { 'Accept': 'application/json' }
+        });
+        if (res.ok) {
+            const data = await res.json();
+            if (data.values && data.values.length > 0) {
+                return data.values[0].id;
+            }
+        }
+    } catch (e) {
+        console.warn("Could not fetch board id:", e);
+    }
+    return null;
+};
+
 export default function App() {
     const [activeTabMode, setActiveTabMode] = useState(() => localStorage.getItem('qc_tool_mode') || 'hierarchy');
 
@@ -1375,7 +1393,12 @@ export default function App() {
                 const currentWorkspace = workspaces.find(ws => ws.id === jiraCloudId);
                 const baseUrl = currentWorkspace ? currentWorkspace.url : `https://enotion.atlassian.net`;
                 const pathPrefix = (projectStyle === 'classic') ? '/jira/software/c/projects' : '/jira/software/projects';
-                autoJiraLink = `${baseUrl}${pathPrefix}/${realKey}/boards`;
+
+                const detectedBoardId = await fetchBoardIdByProject(jiraCloudId, realKey, fetchWithJiraAuth);
+
+                autoJiraLink = detectedBoardId 
+                    ? `${baseUrl}${pathPrefix}/${realKey}/boards/${detectedBoardId}`
+                    : `${baseUrl}${pathPrefix}/${realKey}/boards`;
 
                 const typeContainers = { 'BUG': {}, 'IMPROVEMENT': {}, 'QUESTION': {} };
                 let totalBoardTickets = 0;
