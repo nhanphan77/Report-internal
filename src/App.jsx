@@ -93,6 +93,8 @@ export default function App() {
     const [availableSheetTabs, setAvailableSheetTabs] = useState([]);
     const [availableBoards, setAvailableBoards] = useState([]);
     const [selectedBoardId, setSelectedBoardId] = useState('');
+    const [workspaceMode, setWorkspaceMode] = useState('old');
+    
     const [workspaces, setWorkspaces] = useState(() => JSON.parse(localStorage.getItem('jira_workspaces')) || []);
     const [jiraToken, setJiraToken] = useState(() => localStorage.getItem('jira_access_token') || null);
     const [jiraRefreshToken, setJiraRefreshToken] = useState(() => localStorage.getItem('jira_refresh_token') || null);
@@ -152,7 +154,6 @@ export default function App() {
     const gameVersionRef = useRef(null);
     const appVersionRef = useRef(null);
     const sheetTabNameRef = useRef(null);
-
     const syncTimeoutRef = useRef(null);
 
     const extractDomain = (url) => {
@@ -287,6 +288,7 @@ export default function App() {
                 if (state.selectedParent) setSelectedParent(state.selectedParent);
                 if (state.selectedSprint) setSelectedSprint(state.selectedSprint);
                 if (Array.isArray(state.availableSheetTabs)) setAvailableSheetTabs(state.availableSheetTabs);
+                if (state.workspaceMode !== undefined) setWorkspaceMode(state.workspaceMode);
             } catch (e) { }
         } else {
             const initMap = {};
@@ -352,7 +354,7 @@ export default function App() {
             scopesList, checkedScopes: checkedScopesMap, jiraStatusesList: jiraStatuses, checkedJiraStatuses_B: checkedJiraB,
             checkedJiraStatuses_Unverified: checkedJiraUnverified, checkedJiraStatuses_Pending: checkedJiraPending,
             jiraParents, jiraSprints, selectedParent, selectedSprint,
-            jiraTagsList, checkedJiraTagsMap, availableSheetTabs
+            jiraTagsList, checkedJiraTagsMap, availableSheetTabs, workspaceMode
         };
         localStorage.setItem('last_session_state', JSON.stringify(config));
     }, [
@@ -360,7 +362,7 @@ export default function App() {
         qcNames, testingStatus, chkCustomNote, customNotesData, chkCustomIframe, customIframesData, chkWebapp, chkApptek, chkPreprod, linkShared, linkPreprod,
         scopesList, checkedScopesMap, jiraStatuses, checkedJiraB, checkedJiraUnverified, checkedJiraPending,
         jiraParents, jiraSprints, selectedParent, selectedSprint,
-        jiraTagsList, checkedJiraTagsMap, availableSheetTabs
+        jiraTagsList, checkedJiraTagsMap, availableSheetTabs, workspaceMode
     ]);
 
     useEffect(() => {
@@ -375,7 +377,7 @@ export default function App() {
         return () => {
             if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
         };
-    }, [sheetName]);
+    }, [sheetName, workspaceMode]);
 
     const initiateJiraSSO = () => {
         const redirectUri = encodeURIComponent(window.location.origin + window.location.pathname);
@@ -477,6 +479,7 @@ export default function App() {
             const keys = projectKeysStr.split(',').map(k => k.trim()).filter(Boolean);
             const statusSet = new Set();
             const parentsMap = new Map();
+            let sprintsMap = new Map();
 
             for (const key of keys) {
                 try {
@@ -505,7 +508,15 @@ export default function App() {
                     const exactBoard = fetchedBoards.find(b => b.name.includes(key));
                     const initialBoardId = exactBoard ? exactBoard.id : fetchedBoards[0].id;
                     setSelectedBoardId(initialBoardId);
-                    setJiraSprints([]);
+                    
+                    try {
+                        const sRes = await fetchWithJiraAuth(`https://api.atlassian.com/ex/jira/${jiraCloudId}/rest/agile/1.0/board/${initialBoardId}/sprint?state=active,future`, { headers: { 'Accept': 'application/json' } });
+                        if (sRes.ok) {
+                            const sData = await sRes.json();
+                            sData.values?.forEach(sp => sprintsMap.set(sp.id, sp.name));
+                        }
+                    } catch (e) {}
+
                 } else {
                     throw new Error(`Project Key does not exist or access denied: ${key}`);
                 }
@@ -528,7 +539,8 @@ export default function App() {
                 let jHasMore = true;
                 let currentToken = null;
                 const keysStr = keys.map(k => `"${k}"`).join(',');
-                const tagJql = `project in (${keysStr}) AND issuetype in (Bug, "Bug/Defect", Improvement, Question) ORDER BY created DESC`;
+                const types = workspaceMode === 'new' ? `Bug, "Bug/Defect", Improvement, Question, "Sub-task", "Sub-Bug"` : `Bug, "Bug/Defect", Improvement, Question`;
+                const tagJql = `project in (${keysStr}) AND issuetype in (${types}) ORDER BY created DESC`;
                 
                 while (jHasMore) {
                     const payload = { jql: tagJql, maxResults: 100, fields: ["summary"] };
@@ -568,9 +580,7 @@ export default function App() {
                         return next;
                     });
                 }
-            } catch (e) {
-                console.error("Error while loading tabs:", e);
-            }
+            } catch (e) {}
 
             if (statusSet.size > 0) {
                 const list = Array.from(statusSet);
@@ -610,6 +620,7 @@ export default function App() {
             }
 
             setJiraParents(Array.from(parentsMap.entries()).map(([key, name]) => ({ key, name })));
+            setJiraSprints(Array.from(sprintsMap.entries()).map(([id, name]) => ({ id, name })));
 
             if (!isAuto) {
                 hideLoadingToast();
@@ -628,7 +639,6 @@ export default function App() {
 
     const handleBoardChange = (e) => {
         setSelectedBoardId(e.target.value);
-        setJiraSprints([]);
         setSelectedSprint('All');
     };
 
@@ -1149,13 +1159,14 @@ export default function App() {
                     boardPrefix = matchedBoard.name.split('-')[0].trim();
                 }
 
-                let jqlString = `project in (${projectKeysInput.map(k => `"${k}"`).join(',')}) AND issuetype in (Bug, "Bug/Defect", Improvement, Question)`;
+                let jqlString = `project in (${projectKeysInput.map(k => `"${k}"`).join(',')}) AND issuetype in (Bug, "Bug/Defect", Improvement, Question${workspaceMode === 'new' ? ', "Sub-task", "Sub-Bug"' : ''})`;
                 
-                if (boardPrefix) {
+                if (workspaceMode === 'old' && boardPrefix) {
                     jqlString += ` AND text ~ "${boardPrefix}"`;
                 }
 
                 if (selectedParent !== 'All') jqlString += ` AND (parent = "${selectedParent}" OR "Epic Link" = "${selectedParent}")`;
+                if (selectedSprint !== 'All') jqlString += ` AND sprint = ${selectedSprint}`;
                 jqlString += ` ORDER BY created DESC`;
 
                 const issueMap = new Map();
@@ -1208,7 +1219,7 @@ export default function App() {
                     if (checkedJiraPending[statusName]) { pendingCount++; pendingStatusesFound.add(statusName); }
                     
                     let issueTypeName = (issue.fields.issuetype && issue.fields.issuetype.name) ? issue.fields.issuetype.name.toUpperCase().trim() : '';
-                    if (issueTypeName === 'BUG/DEFECT') issueTypeName = 'BUG';
+                    if (issueTypeName === 'BUG/DEFECT' || issueTypeName === 'SUB-TASK' || issueTypeName === 'SUB-BUG') issueTypeName = 'BUG';
 
                     totalBoardTickets++;
                     if (typeContainers[issueTypeName] === undefined) return;
@@ -1529,6 +1540,24 @@ export default function App() {
             <main className="w-full grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
 
                 <section className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm flex flex-col gap-4">
+                    
+                    <div className="flex items-center gap-4 bg-slate-50 p-1 rounded-xl border border-slate-200 w-fit mb-2">
+                        <button
+                            type="button"
+                            onClick={() => setWorkspaceMode('old')}
+                            className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-all ${workspaceMode === 'old' ? 'bg-white shadow-sm text-indigo-700 border border-slate-200' : 'text-slate-500 hover:text-slate-700'}`}
+                        >
+                            Old Board (Text Filter)
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setWorkspaceMode('new')}
+                            className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-all ${workspaceMode === 'new' ? 'bg-white shadow-sm text-indigo-700 border border-slate-200' : 'text-slate-500 hover:text-slate-700'}`}
+                        >
+                            New Board (Sub-tasks)
+                        </button>
+                    </div>
+
                     <h2 className="text-sm font-bold text-slate-800 tracking-wide flex items-center gap-2">
                         <span className="w-2 h-2 rounded-full bg-indigo-600"></span>
                         <span>Project Details</span>
@@ -1935,7 +1964,7 @@ export default function App() {
             className="w-32 h-9 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-xl border border-slate-300 transition-all disabled:opacity-40 flex items-center justify-center gap-1.5 whitespace-nowrap"
         >
             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
             </svg>
             <span>Copy</span>
         </button>
