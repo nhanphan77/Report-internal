@@ -1849,6 +1849,39 @@ export default function App() {
                         </div>
                     </div>
 
+                    <div className="flex flex-col gap-1.5 bg-indigo-50/40 p-3 rounded-xl border border-indigo-100">
+                        <label className="text-xs font-bold text-indigo-900">Board ID <span className="text-rose-500">*</span></label>
+                        <div className="flex gap-2">
+                            <input
+                                ref={boardIdRef}
+                                type="text"
+                                value={selectedBoardId}
+                                onChange={e => {
+                                    setSelectedBoardId(e.target.value);
+                                    setFormErrors(prev => prev.filter(err => err !== "Board ID"));
+                                }}
+                                placeholder="Type or select Board ID..."
+                                className={`flex-1 h-10 px-3 bg-white border rounded-xl text-xs font-medium text-slate-800 focus:outline-none transition-colors ${formErrors.includes("Board ID") ? 'border-rose-500 ring-1 ring-rose-500' : 'border-slate-300 focus:border-indigo-600'}`}
+                            />
+                            {availableBoards.length > 0 && (
+                                <select
+                                    onChange={e => {
+                                        if (e.target.value) {
+                                            setSelectedBoardId(e.target.value);
+                                            setFormErrors(prev => prev.filter(err => err !== "Board ID"));
+                                        }
+                                    }}
+                                    className="w-10 h-10 bg-white border border-slate-300 rounded-xl text-xs text-slate-800 cursor-pointer outline-none focus:border-indigo-600"
+                                >
+                                    <option value="">▼</option>
+                                    {availableBoards.map(b => (
+                                        <option key={b.id} value={b.id}>{b.name} ({b.id})</option>
+                                    ))}
+                                </select>
+                            )}
+                        </div>
+                    </div>
+
                     {activeTabMode === 'hierarchy' ? (
                         <div className="flex flex-col gap-3 p-3 bg-indigo-50/40 rounded-xl border border-indigo-100">
                             <div className="flex flex-col gap-1.5">
@@ -1883,39 +1916,6 @@ export default function App() {
                         </div>
                     ) : (
                         <div className="flex flex-col gap-3">
-                            <div className="flex flex-col gap-1.5 bg-indigo-50/40 p-3 rounded-xl border border-indigo-100">
-                                <label className="text-xs font-bold text-indigo-900">Board ID <span className="text-rose-500">*</span></label>
-                                <div className="flex gap-2">
-                                    <input
-                                        ref={boardIdRef}
-                                        type="text"
-                                        value={selectedBoardId}
-                                        onChange={e => {
-                                            setSelectedBoardId(e.target.value);
-                                            setFormErrors(prev => prev.filter(err => err !== "Board ID"));
-                                        }}
-                                        placeholder="Type or select Board ID..."
-                                        className={`flex-1 h-10 px-3 bg-white border rounded-xl text-xs font-medium text-slate-800 focus:outline-none transition-colors ${formErrors.includes("Board ID") ? 'border-rose-500 ring-1 ring-rose-500' : 'border-slate-300 focus:border-indigo-600'}`}
-                                    />
-                                    {availableBoards.length > 0 && (
-                                        <select
-                                            onChange={e => {
-                                                if (e.target.value) {
-                                                    setSelectedBoardId(e.target.value);
-                                                    setFormErrors(prev => prev.filter(err => err !== "Board ID"));
-                                                }
-                                            }}
-                                            className="w-10 h-10 bg-white border border-slate-300 rounded-xl text-xs text-slate-800 cursor-pointer outline-none focus:border-indigo-600"
-                                        >
-                                            <option value="">▼</option>
-                                            {availableBoards.map(b => (
-                                                <option key={b.id} value={b.id}>{b.name} ({b.id})</option>
-                                            ))}
-                                        </select>
-                                    )}
-                                </div>
-                            </div>
-
                             <div className="flex flex-col gap-1.5">
                                 <label className="text-xs font-semibold text-slate-600">Epic Filter</label>
                                 <select value={selectedParent} onChange={e => setSelectedParent(e.target.value)} className="h-10 px-3 bg-slate-50 border border-slate-300 rounded-xl text-xs font-medium text-slate-800 focus:outline-none focus:border-indigo-600">
