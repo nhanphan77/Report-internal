@@ -73,7 +73,7 @@ const SearchableDropdown = React.forwardRef(({ options, value, onChange, placeho
                             autoFocus
                         />
                     </div>
-                    <div className="overflow-y-auto py-1 max-h-40">
+                    <div className="overflow-y-auto py-1">
                         {filteredOptions.length > 0 ? filteredOptions.map((opt, i) => {
                             const val = opt.value !== undefined ? opt.value : opt;
                             const lbl = opt.label !== undefined ? opt.label : opt;
@@ -1139,8 +1139,8 @@ export default function App() {
 
                             rawSheetItems.push({
                                 name: colA,
-                                statusKey: statusKey, 
-                                displayValue: disp,   
+                                statusKey: statusKey,
+                                displayValue: disp, 
                                 rowOriginalIndex: i
                             });
                         }
@@ -1860,22 +1860,33 @@ export default function App() {
                     <div className="flex flex-col gap-1.5 bg-indigo-50/40 p-3 rounded-xl border border-indigo-100">
                         <label className="text-xs font-bold text-indigo-900">Board ID <span className="text-rose-500">*</span></label>
                         <div className="flex gap-2">
-                            <div className="flex-1">
-                                <SearchableDropdown
-                                    ref={boardIdRef}
-                                    options={availableBoards.length > 0 
-                                        ? availableBoards.map(b => ({ value: String(b.id), label: `${b.name} (${b.id})` }))
-                                        : [{ value: String(selectedBoardId), label: selectedBoardId ? `Current: ${selectedBoardId}` : "No boards loaded..." }]
-                                    }
-                                    value={String(selectedBoardId)}
-                                    onChange={val => {
-                                        setSelectedBoardId(val);
-                                        setFormErrors(prev => prev.filter(err => err !== "Board ID"));
+                            <input
+                                ref={boardIdRef}
+                                type="text"
+                                value={selectedBoardId}
+                                onChange={e => {
+                                    setSelectedBoardId(e.target.value);
+                                    setFormErrors(prev => prev.filter(err => err !== "Board ID"));
+                                }}
+                                placeholder="Type or select Board ID..."
+                                className={`flex-1 h-10 px-3 bg-white border rounded-xl text-xs font-medium text-slate-800 focus:outline-none transition-colors ${formErrors.includes("Board ID") ? 'border-rose-500 ring-1 ring-rose-500' : 'border-slate-300 focus:border-indigo-600'}`}
+                            />
+                            {availableBoards.length > 0 && (
+                                <select
+                                    onChange={e => {
+                                        if (e.target.value) {
+                                            setSelectedBoardId(e.target.value);
+                                            setFormErrors(prev => prev.filter(err => err !== "Board ID"));
+                                        }
                                     }}
-                                    placeholder="Select Board ID..."
-                                    isError={formErrors.includes("Board ID")}
-                                />
-                            </div>
+                                    className="w-10 h-10 bg-white border border-slate-300 rounded-xl text-xs text-slate-800 cursor-pointer outline-none focus:border-indigo-600"
+                                >
+                                    <option value="">▼</option>
+                                    {availableBoards.map(b => (
+                                        <option key={b.id} value={b.id}>{b.name} ({b.id})</option>
+                                    ))}
+                                </select>
+                            )}
                         </div>
                     </div>
 
