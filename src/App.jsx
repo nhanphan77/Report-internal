@@ -73,7 +73,7 @@ const SearchableDropdown = React.forwardRef(({ options, value, onChange, placeho
                             autoFocus
                         />
                     </div>
-                    <div className="overflow-y-auto py-1">
+                    <div className="overflow-y-auto py-1 max-h-40">
                         {filteredOptions.length > 0 ? filteredOptions.map((opt, i) => {
                             const val = opt.value !== undefined ? opt.value : opt;
                             const lbl = opt.label !== undefined ? opt.label : opt;
@@ -97,7 +97,6 @@ const SearchableDropdown = React.forwardRef(({ options, value, onChange, placeho
 });
 
 let refreshPromise = null;
-
 
 const fetchBoardIdByProject = async (jiraCloudId, projectKey, fetchWithAuth) => {
     try {
@@ -172,7 +171,7 @@ export default function App() {
     const [jiraParents, setJiraParents] = useState([]);
     const [selectedParent, setSelectedParent] = useState('All');
     const [availableBoards, setAvailableBoards] = useState([]);
-const [selectedBoardId, setSelectedBoardId] = useState('');
+    const [selectedBoardId, setSelectedBoardId] = useState('');
 
     const [epicOptions, setEpicOptions] = useState([]);
     const [selectedEpicKey, setSelectedEpicKey] = useState('');
@@ -194,6 +193,8 @@ const [selectedBoardId, setSelectedBoardId] = useState('');
     const gameVersionRef = useRef(null);
     const appVersionRef = useRef(null);
     const sheetTabNameRef = useRef(null);
+    const boardIdRef = useRef(null);
+    const reportNameRef = useRef(null);
 
     const syncTimeoutRef = useRef(null);
 
@@ -617,7 +618,7 @@ const [selectedBoardId, setSelectedBoardId] = useState('');
         scopesList, checkedScopesMap, jiraStatuses, checkedJiraB, checkedJiraUnverified, checkedJiraPending,
         jiraParents, selectedParent,
         jiraTagsList, checkedJiraTagsMap, jiraPrioritiesList, checkedPrioritiesMap, availableSheetTabs,
-        selectedEpicKey, selectedTaskKey
+        selectedEpicKey, selectedTaskKey, selectedBoardId
     ]);
 
     useEffect(() => {
@@ -961,9 +962,14 @@ const [selectedBoardId, setSelectedBoardId] = useState('');
         const selectedScopes = scopesList.filter(scope => checkedScopesMap[scope] === undefined ? false : checkedScopesMap[scope]);
         const sharedInputValue = linkShared.trim();
         const preprodInputValue = linkPreprod.trim();
+        
+        const boardIdInput = String(selectedBoardId).trim();
+        const customReportNameInput = customReportName.trim();
 
         let errors = [];
         if (projectKeysInput.length === 0) errors.push("Project Key");
+        if (!boardIdInput) errors.push("Board ID");
+        if (!customReportNameInput) errors.push("Report Name");
         if (!sheetTabNameInput) errors.push("Sheet Tab Name");
         if (!qcNamesInput) errors.push("QC Team");
         if (!versionGameInput) errors.push("Game Version");
@@ -979,10 +985,12 @@ const [selectedBoardId, setSelectedBoardId] = useState('');
         if (errors.length > 0) {
             showToast("Missing required fields: " + errors.join(', '), 'error');
             if (errors.includes("Project Key") && projectKeyRef.current) projectKeyRef.current.focus();
+            else if (errors.includes("Board ID") && boardIdRef.current) boardIdRef.current.focus();
             else if (errors.includes("QC Team") && qcTeamRef.current) qcTeamRef.current.focus();
             else if (errors.includes("Game Version") && gameVersionRef.current) gameVersionRef.current.focus();
             else if (errors.includes("App Version") && appVersionRef.current) appVersionRef.current.focus();
             else if (errors.includes("Sheet Tab Name") && sheetTabNameRef.current) sheetTabNameRef.current.focus();
+            else if (errors.includes("Report Name") && reportNameRef.current) reportNameRef.current.focus();
             return;
         }
 
@@ -1132,7 +1140,7 @@ const [selectedBoardId, setSelectedBoardId] = useState('');
                             rawSheetItems.push({
                                 name: colA,
                                 statusKey: statusKey, 
-                                displayValue: disp,  
+                                displayValue: disp,   
                                 rowOriginalIndex: i
                             });
                         }
@@ -1849,6 +1857,28 @@ const [selectedBoardId, setSelectedBoardId] = useState('');
                         </div>
                     </div>
 
+                    <div className="flex flex-col gap-1.5 bg-indigo-50/40 p-3 rounded-xl border border-indigo-100">
+                        <label className="text-xs font-bold text-indigo-900">Board ID <span className="text-rose-500">*</span></label>
+                        <div className="flex gap-2">
+                            <div className="flex-1">
+                                <SearchableDropdown
+                                    ref={boardIdRef}
+                                    options={availableBoards.length > 0 
+                                        ? availableBoards.map(b => ({ value: String(b.id), label: `${b.name} (${b.id})` }))
+                                        : [{ value: String(selectedBoardId), label: selectedBoardId ? `Current: ${selectedBoardId}` : "No boards loaded..." }]
+                                    }
+                                    value={String(selectedBoardId)}
+                                    onChange={val => {
+                                        setSelectedBoardId(val);
+                                        setFormErrors(prev => prev.filter(err => err !== "Board ID"));
+                                    }}
+                                    placeholder="Select Board ID..."
+                                    isError={formErrors.includes("Board ID")}
+                                />
+                            </div>
+                        </div>
+                    </div>
+
                     {activeTabMode === 'hierarchy' ? (
                         <div className="flex flex-col gap-3 p-3 bg-indigo-50/40 rounded-xl border border-indigo-100">
                             <div className="flex flex-col gap-1.5">
@@ -1883,18 +1913,6 @@ const [selectedBoardId, setSelectedBoardId] = useState('');
                         </div>
                     ) : (
                         <div className="flex flex-col gap-3">
-                            {availableBoards.length > 0 && (
-                                <div className="flex flex-col gap-1.5 bg-indigo-50/40 p-3 rounded-xl border border-indigo-100">
-                                    <label className="text-xs font-bold text-indigo-900">Select Board</label>
-                                    <SearchableDropdown
-                                        options={availableBoards.map(b => ({ value: b.id, label: b.name }))}
-                                        value={selectedBoardId}
-                                        onChange={val => setSelectedBoardId(val)}
-                                        placeholder="Select a board..."
-                                    />
-                                </div>
-                            )}
-
                             <div className="flex flex-col gap-1.5">
                                 <label className="text-xs font-semibold text-slate-600">Epic Filter</label>
                                 <select value={selectedParent} onChange={e => setSelectedParent(e.target.value)} className="h-10 px-3 bg-slate-50 border border-slate-300 rounded-xl text-xs font-medium text-slate-800 focus:outline-none focus:border-indigo-600">
@@ -1936,8 +1954,18 @@ const [selectedBoardId, setSelectedBoardId] = useState('');
 
                     <div className="grid grid-cols-2 gap-3">
                         <div className="flex flex-col gap-1.5">
-                            <label className="text-xs font-semibold text-slate-600">Custom Report Name</label>
-                            <input type="text" value={customReportName} onChange={e => setCustomReportName(e.target.value)} placeholder="Optional: Override default name" className="w-full h-10 px-3 bg-slate-50 border border-slate-300 rounded-xl text-xs font-medium text-slate-800 focus:outline-none focus:border-indigo-600" />
+                            <label className="text-xs font-semibold text-slate-600">Report Name <span className="text-rose-500">*</span></label>
+                            <input 
+                                ref={reportNameRef}
+                                type="text" 
+                                value={customReportName} 
+                                onChange={e => {
+                                    setCustomReportName(e.target.value);
+                                    setFormErrors(prev => prev.filter(err => err !== "Report Name"));
+                                }} 
+                                placeholder="Required: Enter Report Name" 
+                                className={`w-full h-10 px-3 bg-slate-50 border rounded-xl text-xs font-medium text-slate-800 focus:outline-none transition-colors ${formErrors.includes("Report Name") ? 'border-rose-500 ring-1 ring-rose-500' : 'border-slate-300 focus:border-indigo-600'}`} 
+                            />
                         </div>
                         <div className="flex flex-col gap-1.5">
                             <label className="text-xs font-semibold text-slate-600">Testing Status</label>
