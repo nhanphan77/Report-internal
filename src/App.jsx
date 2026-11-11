@@ -609,8 +609,7 @@ export default function App() {
             checkedJiraStatuses_Unverified: checkedJiraUnverified, checkedJiraStatuses_Pending: checkedJiraPending,
             jiraParents, selectedParent,
             jiraTagsList, checkedJiraTagsMap, jiraPrioritiesList, checkedPrioritiesMap, availableSheetTabs,
-            selectedEpicKey, selectedTaskKey,
-            selectedBoardId, availableBoards
+            selectedEpicKey, selectedTaskKey, selectedBoardId, availableBoards
         };
         localStorage.setItem('last_session_state', JSON.stringify(config));
     }, [
