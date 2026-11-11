@@ -541,6 +541,7 @@ export default function App() {
                 if (state.selectedEpicKey) setSelectedEpicKey(state.selectedEpicKey);
                 if (state.selectedTaskKey) setSelectedTaskKey(state.selectedTaskKey);
                 if (state.selectedBoardId) setSelectedBoardId(state.selectedBoardId);
+                if (Array.isArray(state.availableBoards)) setAvailableBoards(state.availableBoards);
             } catch (e) { }
         } else {
             const initMap = {};
@@ -609,7 +610,7 @@ export default function App() {
             jiraParents, selectedParent,
             jiraTagsList, checkedJiraTagsMap, jiraPrioritiesList, checkedPrioritiesMap, availableSheetTabs,
             selectedEpicKey, selectedTaskKey,
-            selectedBoardId 
+            selectedBoardId, availableBoards
         };
         localStorage.setItem('last_session_state', JSON.stringify(config));
     }, [
@@ -618,7 +619,7 @@ export default function App() {
         scopesList, checkedScopesMap, jiraStatuses, checkedJiraB, checkedJiraUnverified, checkedJiraPending,
         jiraParents, selectedParent,
         jiraTagsList, checkedJiraTagsMap, jiraPrioritiesList, checkedPrioritiesMap, availableSheetTabs,
-        selectedEpicKey, selectedTaskKey, selectedBoardId
+        selectedEpicKey, selectedTaskKey, selectedBoardId, availableBoards
     ]);
 
     useEffect(() => {
