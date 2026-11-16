@@ -766,27 +766,45 @@ export default function App() {
                 } catch (e) { }
 
                 try {
-                    const bRes = await fetchWithJiraAuth(`https://api.atlassian.com/ex/jira/${jiraCloudId}/rest/agile/1.0/board?projectLocation=${key}&maxResults=100`, { 
-                        headers: { 'Accept': 'application/json' } 
-                    });
-                    if (bRes.ok) {
-                        const bData = await bRes.json();
-                        if (bData && bData.values && bData.values.length > 0) {
-                            const fetchedBoards = bData.values.map(b => ({
-                                id: b.id,
-                                name: b.name,
-                                value: b.id.toString(),
-                                label: `${b.name} (${b.id})`
-                            }));
-                            
-                            fetchedBoards.sort((a, b) => a.name.localeCompare(b.name));
-                            
-                            setAvailableBoards(fetchedBoards);
-                            
-                            if (!selectedBoardId) {
-                                setSelectedBoardId(fetchedBoards[0].id.toString());
-                                setSelectedBoardName(fetchedBoards[0].name);
+                    let allBoards = [];
+                    let isLast = false;
+                    let startAt = 0;
+                    
+                    while (!isLast) {
+                        const bRes = await fetchWithJiraAuth(`https://api.atlassian.com/ex/jira/${jiraCloudId}/rest/agile/1.0/board?startAt=${startAt}&maxResults=50`, { 
+                            headers: { 'Accept': 'application/json' } 
+                        });
+                        
+                        if (bRes.ok) {
+                            const bData = await bRes.json();
+                            if (bData && bData.values && bData.values.length > 0) {
+                                allBoards = allBoards.concat(bData.values);
+                                startAt += bData.values.length;
+                                isLast = bData.isLast !== undefined ? bData.isLast : true;
+                            } else {
+                                isLast = true;
                             }
+                        } else {
+                            console.error("Lỗi API khi tải danh sách Board:", await bRes.text());
+                            break;
+                        }
+                    }
+
+                    if (allBoards.length > 0) {
+                        const fetchedBoards = allBoards.map(b => ({
+                            id: b.id,
+                            name: b.name,
+                            value: b.id.toString(),
+                            label: `${b.name} (${b.id})`
+                        }));
+                        
+                        fetchedBoards.sort((a, b) => a.name.localeCompare(b.name));
+                        
+                        setAvailableBoards(fetchedBoards);
+                        
+                        if (!selectedBoardId) {
+                            setSelectedBoardId(fetchedBoards[0].id.toString());
+                            setSelectedBoardName(fetchedBoards[0].name);
                         }
                     }
                 } catch (e) {
