@@ -232,6 +232,9 @@ export default function App() {
         setCheckedPrioritiesMap({});
         setJiraTagsList([]);
         setCheckedJiraTagsMap({});
+        setAvailableBoards([]);
+        setSelectedBoardId('');
+        setSelectedBoardName('');
         showToast("Disconnected Jira.", 'success');
     };
 
@@ -640,7 +643,7 @@ export default function App() {
 
     const initiateJiraSSO = () => {
         const redirectUri = encodeURIComponent(window.location.origin + window.location.pathname);
-        const scope = encodeURIComponent("read:jira-work read:jira-user read:jira-software offline_access");
+        const scope = encodeURIComponent("read:jira-work read:jira-user read:board-scope:jira-software read:epic:jira-software offline_access");
         const authUrl = `https://auth.atlassian.com/authorize?audience=api.atlassian.com&client_id=${ATLASSIAN_CLIENT_ID}&scope=${scope}&redirect_uri=${redirectUri}&response_type=code&prompt=consent`;
         window.location.href = authUrl;
     };
@@ -785,7 +788,12 @@ export default function App() {
                                 isLast = true;
                             }
                         } else {
-                            console.error("Lỗi API khi tải danh sách Board:", await bRes.text());
+                            const errText = await bRes.text();
+                            console.error("Lỗi API khi tải danh sách Board:", errText);
+                            if (!isAuto) {
+                                hideLoadingToast();
+                                showToast(`Lỗi Jira (${bRes.status})`, "error");
+                            }
                             break;
                         }
                     }
