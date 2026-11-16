@@ -100,7 +100,7 @@ let refreshPromise = null;
 
 const fetchBoardIdByProject = async (jiraCloudId, projectKey, fetchWithAuth) => {
     try {
-        const res = await fetchWithAuth(`https://api.atlassian.com/ex/jira/${jiraCloudId}/rest/agile/1.0/board?projectKeyOrId=${projectKey}`, {
+        const res = await fetchWithAuth(`https://api.atlassian.com/ex/jira/${jiraCloudId}/rest/agile/1.0/board?projectLocation=${projectKey}&maxResults=100`, {
             headers: { 'Accept': 'application/json' }
         });
         if (res.ok) {
@@ -766,14 +766,27 @@ export default function App() {
                 } catch (e) { }
 
                 try {
-                    const bRes = await fetchWithJiraAuth(`https://api.atlassian.com/ex/jira/${jiraCloudId}/rest/agile/1.0/board?projectKeyOrId=${key}`, { headers: { 'Accept': 'application/json' } });
+                    const bRes = await fetchWithJiraAuth(`https://api.atlassian.com/ex/jira/${jiraCloudId}/rest/agile/1.0/board?projectLocation=${key}&maxResults=100`, { 
+                        headers: { 'Accept': 'application/json' } 
+                    });
                     if (bRes.ok) {
                         const bData = await bRes.json();
                         if (bData && bData.values && bData.values.length > 0) {
-                            const fetchedBoards = bData.values.map(b => ({ id: b.id, name: b.name }));
+                            const fetchedBoards = bData.values.map(b => ({
+                                id: b.id,
+                                name: b.name,
+                                value: b.id.toString(),
+                                label: `${b.name} (${b.id})`
+                            }));
+                            
+                            fetchedBoards.sort((a, b) => a.name.localeCompare(b.name));
+                            
                             setAvailableBoards(fetchedBoards);
-                            setSelectedBoardId(fetchedBoards[0].id.toString());
-                            setSelectedBoardName(fetchedBoards[0].name);
+                            
+                            if (!selectedBoardId) {
+                                setSelectedBoardId(fetchedBoards[0].id.toString());
+                                setSelectedBoardName(fetchedBoards[0].name);
+                            }
                         }
                     }
                 } catch (e) {
