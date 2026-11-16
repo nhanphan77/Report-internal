@@ -172,6 +172,7 @@ export default function App() {
     const [selectedParent, setSelectedParent] = useState('All');
     const [availableBoards, setAvailableBoards] = useState([]);
     const [selectedBoardId, setSelectedBoardId] = useState('');
+    const [selectedBoardName, setSelectedBoardName] = useState('');
 
     const [epicOptions, setEpicOptions] = useState([]);
     const [selectedEpicKey, setSelectedEpicKey] = useState('');
@@ -541,6 +542,7 @@ export default function App() {
                 if (state.selectedEpicKey) setSelectedEpicKey(state.selectedEpicKey);
                 if (state.selectedTaskKey) setSelectedTaskKey(state.selectedTaskKey);
                 if (state.selectedBoardId) setSelectedBoardId(state.selectedBoardId);
+                if (state.selectedBoardName) setSelectedBoardName(state.selectedBoardName);
                 if (Array.isArray(state.availableBoards)) setAvailableBoards(state.availableBoards);
             } catch (e) { }
         } else {
@@ -609,7 +611,7 @@ export default function App() {
             checkedJiraStatuses_Unverified: checkedJiraUnverified, checkedJiraStatuses_Pending: checkedJiraPending,
             jiraParents, selectedParent,
             jiraTagsList, checkedJiraTagsMap, jiraPrioritiesList, checkedPrioritiesMap, availableSheetTabs,
-            selectedEpicKey, selectedTaskKey, selectedBoardId, availableBoards
+            selectedEpicKey, selectedTaskKey, selectedBoardId, selectedBoardName, availableBoards
         };
         localStorage.setItem('last_session_state', JSON.stringify(config));
     }, [
@@ -618,7 +620,7 @@ export default function App() {
         scopesList, checkedScopesMap, jiraStatuses, checkedJiraB, checkedJiraUnverified, checkedJiraPending,
         jiraParents, selectedParent,
         jiraTagsList, checkedJiraTagsMap, jiraPrioritiesList, checkedPrioritiesMap, availableSheetTabs,
-        selectedEpicKey, selectedTaskKey, selectedBoardId, availableBoards
+        selectedEpicKey, selectedTaskKey, selectedBoardId, selectedBoardName, availableBoards
     ]);
 
     useEffect(() => {
@@ -768,14 +770,10 @@ export default function App() {
                     if (bRes.ok) {
                         const bData = await bRes.json();
                         if (bData && bData.values && bData.values.length > 0) {
-                            const fetchedBoards = bData.values.map(b => ({
-                                id: b.id,
-                                name: b.name,
-                                value: b.id.toString(),
-                                label: `${b.name} (${b.id})`
-                            }));
+                            const fetchedBoards = bData.values.map(b => ({ id: b.id, name: b.name }));
                             setAvailableBoards(fetchedBoards);
                             setSelectedBoardId(fetchedBoards[0].id.toString());
+                            setSelectedBoardName(fetchedBoards[0].name);
                         }
                     }
                 } catch (e) {
@@ -1796,6 +1794,8 @@ export default function App() {
                                     setJiraPrioritiesList([]);
                                     setJiraTagsList([]);
                                     setAuthTrigger(prev => prev + 1);
+                                    setSelectedBoardId('');
+                                    setSelectedBoardName('');
                                     showToast("Switched Jira Workspace", 'success');
                                 }}
                                 className="h-10 px-3 bg-white border border-slate-300 rounded-xl text-xs font-medium text-slate-800 focus:outline-none focus:border-indigo-600 shadow-sm"
@@ -1864,21 +1864,49 @@ export default function App() {
 
                     <div className="flex flex-col gap-1.5 bg-indigo-50/40 p-3 rounded-xl border border-indigo-100">
                         <div className="flex justify-between items-center">
-                            <label className="text-xs font-bold text-indigo-900">Board Name / ID <span className="text-rose-500">*</span></label>
-                            {availableBoards.length === 0 && <span className="text-[10px] text-indigo-500 italic">Nhấn ↻ Sync để tải Board</span>}
+                            <label className="text-xs font-bold text-indigo-900">Board Info <span className="text-rose-500">*</span></label>
+                            {availableBoards.length > 0 && (
+                                <select
+                                    onChange={e => {
+                                        const bId = e.target.value;
+                                        if (bId) {
+                                            const board = availableBoards.find(b => b.id.toString() === bId);
+                                            if (board) {
+                                                setSelectedBoardId(board.id.toString());
+                                                setSelectedBoardName(board.name);
+                                                setFormErrors(prev => prev.filter(err => err !== "Board ID"));
+                                            }
+                                        }
+                                    }}
+                                    className="h-6 px-1 bg-white border border-indigo-200 rounded text-[10px] text-indigo-700 cursor-pointer outline-none focus:border-indigo-600"
+                                >
+                                    <option value="">▼ Chọn từ danh sách Jira...</option>
+                                    {availableBoards.map(b => (
+                                        <option key={b.id} value={b.id}>{b.name} ({b.id})</option>
+                                    ))}
+                                </select>
+                            )}
                         </div>
-                        
-                        <SearchableDropdown 
-                            ref={boardIdRef}
-                            options={availableBoards}
-                            value={selectedBoardId ? selectedBoardId.toString() : ''}
-                            onChange={val => {
-                                setSelectedBoardId(val);
-                                setFormErrors(prev => prev.filter(err => err !== "Board ID"));
-                            }}
-                            placeholder={availableBoards.length > 0 ? "Tìm và chọn Board..." : "Chưa có danh sách Board..."}
-                            isError={formErrors.includes("Board ID")}
-                        />
+                        <div className="flex gap-2">
+                            <input
+                                type="text"
+                                value={selectedBoardName}
+                                onChange={e => setSelectedBoardName(e.target.value)}
+                                placeholder="Nhập tên Board..."
+                                className="flex-1 h-10 px-3 bg-white border border-slate-300 rounded-xl text-xs font-medium text-slate-800 focus:outline-none focus:border-indigo-600"
+                            />
+                            <input
+                                ref={boardIdRef}
+                                type="text"
+                                value={selectedBoardId}
+                                onChange={e => {
+                                    setSelectedBoardId(e.target.value);
+                                    setFormErrors(prev => prev.filter(err => err !== "Board ID"));
+                                }}
+                                placeholder="ID..."
+                                className={`w-28 h-10 px-3 bg-white border rounded-xl text-xs font-medium text-slate-800 focus:outline-none transition-colors ${formErrors.includes("Board ID") ? 'border-rose-500 ring-1 ring-rose-500' : 'border-slate-300 focus:border-indigo-600'}`}
+                            />
+                        </div>
                     </div>
 
                     {activeTabMode === 'hierarchy' ? (
