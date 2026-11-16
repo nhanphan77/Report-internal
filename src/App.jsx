@@ -768,9 +768,14 @@ export default function App() {
                     if (bRes.ok) {
                         const bData = await bRes.json();
                         if (bData && bData.values && bData.values.length > 0) {
-                            const fetchedBoards = bData.values.map(b => ({ id: b.id, name: b.name }));
+                            const fetchedBoards = bData.values.map(b => ({
+                                id: b.id,
+                                name: b.name,
+                                value: b.id.toString(),
+                                label: `${b.name} (${b.id})`
+                            }));
                             setAvailableBoards(fetchedBoards);
-                            setSelectedBoardId(fetchedBoards[0].id);
+                            setSelectedBoardId(fetchedBoards[0].id.toString());
                         }
                     }
                 } catch (e) {
@@ -1858,36 +1863,22 @@ export default function App() {
                     </div>
 
                     <div className="flex flex-col gap-1.5 bg-indigo-50/40 p-3 rounded-xl border border-indigo-100">
-                        <label className="text-xs font-bold text-indigo-900">Board ID <span className="text-rose-500">*</span></label>
-                        <div className="flex gap-2">
-                            <input
-                                ref={boardIdRef}
-                                type="text"
-                                value={selectedBoardId}
-                                onChange={e => {
-                                    setSelectedBoardId(e.target.value);
-                                    setFormErrors(prev => prev.filter(err => err !== "Board ID"));
-                                }}
-                                placeholder="Type or select Board ID..."
-                                className={`flex-1 h-10 px-3 bg-white border rounded-xl text-xs font-medium text-slate-800 focus:outline-none transition-colors ${formErrors.includes("Board ID") ? 'border-rose-500 ring-1 ring-rose-500' : 'border-slate-300 focus:border-indigo-600'}`}
-                            />
-                            {availableBoards.length > 0 && (
-                                <select
-                                    onChange={e => {
-                                        if (e.target.value) {
-                                            setSelectedBoardId(e.target.value);
-                                            setFormErrors(prev => prev.filter(err => err !== "Board ID"));
-                                        }
-                                    }}
-                                    className="w-10 h-10 bg-white border border-slate-300 rounded-xl text-xs text-slate-800 cursor-pointer outline-none focus:border-indigo-600"
-                                >
-                                    <option value="">▼</option>
-                                    {availableBoards.map(b => (
-                                        <option key={b.id} value={b.id}>{b.name} ({b.id})</option>
-                                    ))}
-                                </select>
-                            )}
+                        <div className="flex justify-between items-center">
+                            <label className="text-xs font-bold text-indigo-900">Board Name / ID <span className="text-rose-500">*</span></label>
+                            {availableBoards.length === 0 && <span className="text-[10px] text-indigo-500 italic">Nhấn ↻ Sync để tải Board</span>}
                         </div>
+                        
+                        <SearchableDropdown 
+                            ref={boardIdRef}
+                            options={availableBoards}
+                            value={selectedBoardId ? selectedBoardId.toString() : ''}
+                            onChange={val => {
+                                setSelectedBoardId(val);
+                                setFormErrors(prev => prev.filter(err => err !== "Board ID"));
+                            }}
+                            placeholder={availableBoards.length > 0 ? "Tìm và chọn Board..." : "Chưa có danh sách Board..."}
+                            isError={formErrors.includes("Board ID")}
+                        />
                     </div>
 
                     {activeTabMode === 'hierarchy' ? (
