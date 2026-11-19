@@ -28,7 +28,7 @@ const extractDomain = (url) => {
     }
 };
 
-const SearchableDropdown = React.forwardRef(({ options, value, onChange, placeholder, isError }, ref) => {
+const SearchableDropdown = React.forwardRef(({ options, value, onChange, placeholder, isError, isMulti = false }, ref) => {
     const [isOpen, setIsOpen] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
     const wrapperRef = useRef(null);
@@ -47,18 +47,43 @@ const SearchableDropdown = React.forwardRef(({ options, value, onChange, placeho
         (opt.label || opt).toString().toLowerCase().includes(searchTerm.toLowerCase())
     );
 
-    const displayValue = options.find(opt => (opt.value !== undefined ? opt.value : opt) === value);
-    const displayLabel = displayValue ? (displayValue.label || displayValue) : value;
+    let displayLabel = placeholder;
+    if (isMulti) {
+        if (Array.isArray(value) && value.length > 0) {
+            displayLabel = value.map(v => {
+                const opt = options.find(o => (o.value !== undefined ? o.value : o) === v);
+                return opt ? (opt.label || opt) : v;
+            }).join(', ');
+        }
+    } else {
+        const displayValue = options.find(opt => (opt.value !== undefined ? opt.value : opt) === value);
+        if (displayValue) displayLabel = (displayValue.label || displayValue);
+        else if (value) displayLabel = value;
+    }
+
+    const handleSelect = (val) => {
+        if (isMulti) {
+            const newValue = Array.isArray(value) ? [...value] : [];
+            if (newValue.includes(val)) {
+                onChange(newValue.filter(v => v !== val));
+            } else {
+                onChange([...newValue, val]);
+            }
+        } else {
+            onChange(val);
+            setIsOpen(false);
+        }
+    };
 
     return (
         <div ref={wrapperRef} className="relative w-full">
             <div 
                 ref={ref}
                 tabIndex={0}
-                className={`h-10 px-3.5 bg-white border rounded-xl text-xs font-semibold text-slate-900 flex items-center justify-between cursor-pointer transition-all ${isError ? 'border-rose-500 ring-1 ring-rose-500' : 'border-slate-300 hover:border-slate-400 focus:border-indigo-600 focus:ring-1 focus:ring-indigo-600 outline-none'}`}
+                className={`min-h-[40px] px-3.5 py-2 bg-white border rounded-xl text-xs font-semibold text-slate-900 flex items-center justify-between cursor-pointer transition-all ${isError ? 'border-rose-500 ring-1 ring-rose-500' : 'border-slate-300 hover:border-slate-400 focus:border-indigo-600 focus:ring-1 focus:ring-indigo-600 outline-none'}`}
                 onClick={() => { setIsOpen(!isOpen); setSearchTerm(''); }}
             >
-                <span className="truncate">{displayLabel || placeholder}</span>
+                <span className="truncate">{displayLabel}</span>
                 <span className="text-slate-400 ml-2 text-[10px]">▼</span>
             </div>
             {isOpen && (
@@ -77,13 +102,17 @@ const SearchableDropdown = React.forwardRef(({ options, value, onChange, placeho
                         {filteredOptions.length > 0 ? filteredOptions.map((opt, i) => {
                             const val = opt.value !== undefined ? opt.value : opt;
                             const lbl = opt.label !== undefined ? opt.label : opt;
+                            const isSelected = isMulti ? (Array.isArray(value) && value.includes(val)) : (value === val);
                             return (
                                 <div 
                                     key={i} 
-                                    className="px-3 py-2.5 text-xs font-medium text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 cursor-pointer transition-colors border-b border-slate-50 last:border-0"
-                                    onClick={() => { onChange(val); setIsOpen(false); }}
+                                    className="px-3 py-2.5 text-xs font-medium text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 cursor-pointer transition-colors border-b border-slate-50 last:border-0 flex items-center gap-2"
+                                    onClick={() => handleSelect(val)}
                                 >
-                                    {lbl}
+                                    {isMulti && (
+                                        <input type="checkbox" checked={isSelected} readOnly className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" />
+                                    )}
+                                    <span className="truncate">{lbl}</span>
                                 </div>
                             );
                         }) : (
@@ -100,7 +129,7 @@ let refreshPromise = null;
 
 const fetchBoardIdByProject = async (jiraCloudId, projectKey, fetchWithAuth) => {
     try {
-        const res = await fetchWithAuth(`https://api.atlassian.com/ex/jira/${jiraCloudId}/rest/agile/1.0/board?projectLocation=${projectKey}&maxResults=100`, {
+        const res = await fetchWithAuth(`https://api.atlassian.com/ex/jira/${jiraCloudId}/rest/agile/1.0/board?projectKeyOrId=${projectKey}`, {
             headers: { 'Accept': 'application/json' }
         });
         if (res.ok) {
@@ -129,7 +158,7 @@ export default function App() {
     const [authTrigger, setAuthTrigger] = useState(0);
 
     const [sheetName, setSheetName] = useState('');
-    const [sheetTabName, setSheetTabName] = useState('');
+    const [sheetTabName, setSheetTabName] = useState([]);
     const [dateReport, setDateReport] = useState('');
     const [customReportName, setCustomReportName] = useState('');
     const [qcNames, setQcNames] = useState('');
@@ -172,12 +201,11 @@ export default function App() {
     const [selectedParent, setSelectedParent] = useState('All');
     const [availableBoards, setAvailableBoards] = useState([]);
     const [selectedBoardId, setSelectedBoardId] = useState('');
-    const [selectedBoardName, setSelectedBoardName] = useState('');
 
     const [epicOptions, setEpicOptions] = useState([]);
-    const [selectedEpicKey, setSelectedEpicKey] = useState('');
+    const [selectedEpicKey, setSelectedEpicKey] = useState([]);
     const [epicTasksList, setEpicTasksList] = useState([]);
-    const [selectedTaskKey, setSelectedTaskKey] = useState('');
+    const [selectedTaskKey, setSelectedTaskKey] = useState([]);
     const [isLoadingEpics, setIsLoadingEpics] = useState(false);
     const [isLoadingTasks, setIsLoadingTasks] = useState(false);
 
@@ -232,9 +260,6 @@ export default function App() {
         setCheckedPrioritiesMap({});
         setJiraTagsList([]);
         setCheckedJiraTagsMap({});
-        setAvailableBoards([]);
-        setSelectedBoardId('');
-        setSelectedBoardName('');
         showToast("Disconnected Jira.", 'success');
     };
 
@@ -385,11 +410,12 @@ export default function App() {
         });
     };
 
-    const syncSubTaskMetadata = async (taskKey) => {
-        if (!taskKey || !jiraCloudId) return;
+    const syncSubTaskMetadata = async (taskKeys) => {
+        if (!taskKeys || taskKeys.length === 0 || !jiraCloudId) return;
         try {
+            const keysJql = taskKeys.map(k => `"${k}"`).join(',');
             const payload = {
-                jql: `parent = "${taskKey}"`,
+                jql: `parent in (${keysJql})`,
                 maxResults: 150,
                 fields: ["status", "summary", "priority"]
             };
@@ -459,16 +485,17 @@ export default function App() {
         }
     };
 
-    const handleEpicSelect = async (epicKey) => {
-        setSelectedEpicKey(epicKey);
-        setSelectedTaskKey('');
+    const handleEpicSelect = async (epicKeys) => {
+        setSelectedEpicKey(epicKeys);
+        setSelectedTaskKey([]);
         setEpicTasksList([]);
-        if (!epicKey || !jiraCloudId) return;
+        if (!epicKeys || epicKeys.length === 0 || !jiraCloudId) return;
 
         setIsLoadingTasks(true);
         showToast("Fetching Tasks for Epic...", 'loading');
         try {
-            const jql = `(parent = "${epicKey}" OR "Epic Link" = "${epicKey}") AND issuetype in (Task, Story, Standard) ORDER BY created DESC`;
+            const keysJql = epicKeys.map(k => `"${k}"`).join(',');
+            const jql = `(parent in (${keysJql}) OR "Epic Link" in (${keysJql})) AND issuetype in (Task, Story, Standard) ORDER BY created DESC`;
             const res = await fetchWithJiraAuth(`https://api.atlassian.com/ex/jira/${jiraCloudId}/rest/api/3/search/jql`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
@@ -484,13 +511,14 @@ export default function App() {
                 }));
                 setEpicTasksList(tasks);
 
-                const qcBugTask = tasks.find(t => t.summary.toLowerCase().includes('[qc] bugs list') || t.summary.toLowerCase().includes('bugs list'));
-                if (qcBugTask) {
-                    setSelectedTaskKey(qcBugTask.value);
-                    syncSubTaskMetadata(qcBugTask.value);
+                const qcBugTasks = tasks.filter(t => t.summary.toLowerCase().includes('[qc] bugs list') || t.summary.toLowerCase().includes('bugs list'));
+                if (qcBugTasks.length > 0) {
+                    const keys = qcBugTasks.map(t => t.value);
+                    setSelectedTaskKey(keys);
+                    syncSubTaskMetadata(keys);
                 } else if (tasks.length > 0) {
-                    setSelectedTaskKey(tasks[0].value);
-                    syncSubTaskMetadata(tasks[0].value);
+                    setSelectedTaskKey([tasks[0].value]);
+                    syncSubTaskMetadata([tasks[0].value]);
                 }
                 hideLoadingToast();
                 showToast("Loaded tasks for Epic successfully!", 'success');
@@ -509,7 +537,7 @@ export default function App() {
             try {
                 const state = JSON.parse(savedData);
                 if (state.sheetName) setSheetName(state.sheetName);
-                if (state.sheetTabName) setSheetTabName(state.sheetTabName);
+                if (state.sheetTabName) setSheetTabName(Array.isArray(state.sheetTabName) ? state.sheetTabName : [state.sheetTabName].filter(Boolean));
                 if (state.dateReport) setDateReport(state.dateReport);
                 if (state.customReportName) setCustomReportName(state.customReportName);
                 if (state.versionGame) setVersionGame(state.versionGame);
@@ -542,11 +570,9 @@ export default function App() {
                 if (Array.isArray(state.jiraParents)) setJiraParents(state.jiraParents);
                 if (state.selectedParent) setSelectedParent(state.selectedParent);
                 if (Array.isArray(state.availableSheetTabs)) setAvailableSheetTabs(state.availableSheetTabs);
-                if (state.selectedEpicKey) setSelectedEpicKey(state.selectedEpicKey);
-                if (state.selectedTaskKey) setSelectedTaskKey(state.selectedTaskKey);
+                if (state.selectedEpicKey) setSelectedEpicKey(Array.isArray(state.selectedEpicKey) ? state.selectedEpicKey : [state.selectedEpicKey].filter(Boolean));
+                if (state.selectedTaskKey) setSelectedTaskKey(Array.isArray(state.selectedTaskKey) ? state.selectedTaskKey : [state.selectedTaskKey].filter(Boolean));
                 if (state.selectedBoardId) setSelectedBoardId(state.selectedBoardId);
-                if (state.selectedBoardName) setSelectedBoardName(state.selectedBoardName);
-                if (Array.isArray(state.availableBoards)) setAvailableBoards(state.availableBoards);
             } catch (e) { }
         } else {
             const initMap = {};
@@ -614,7 +640,8 @@ export default function App() {
             checkedJiraStatuses_Unverified: checkedJiraUnverified, checkedJiraStatuses_Pending: checkedJiraPending,
             jiraParents, selectedParent,
             jiraTagsList, checkedJiraTagsMap, jiraPrioritiesList, checkedPrioritiesMap, availableSheetTabs,
-            selectedEpicKey, selectedTaskKey, selectedBoardId, selectedBoardName, availableBoards
+            selectedEpicKey, selectedTaskKey,
+            selectedBoardId 
         };
         localStorage.setItem('last_session_state', JSON.stringify(config));
     }, [
@@ -623,7 +650,7 @@ export default function App() {
         scopesList, checkedScopesMap, jiraStatuses, checkedJiraB, checkedJiraUnverified, checkedJiraPending,
         jiraParents, selectedParent,
         jiraTagsList, checkedJiraTagsMap, jiraPrioritiesList, checkedPrioritiesMap, availableSheetTabs,
-        selectedEpicKey, selectedTaskKey, selectedBoardId, selectedBoardName, availableBoards
+        selectedEpicKey, selectedTaskKey, selectedBoardId
     ]);
 
     useEffect(() => {
@@ -643,7 +670,7 @@ export default function App() {
 
     const initiateJiraSSO = () => {
         const redirectUri = encodeURIComponent(window.location.origin + window.location.pathname);
-        const scope = encodeURIComponent("read:jira-work read:jira-user read:board-scope:jira-software read:epic:jira-software offline_access");
+        const scope = encodeURIComponent("read:jira-work read:jira-user read:jira-software offline_access");
         const authUrl = `https://auth.atlassian.com/authorize?audience=api.atlassian.com&client_id=${ATLASSIAN_CLIENT_ID}&scope=${scope}&redirect_uri=${redirectUri}&response_type=code&prompt=consent`;
         window.location.href = authUrl;
     };
@@ -695,8 +722,8 @@ export default function App() {
             const tabs = data.sheets.map(s => s.properties.title);
             setAvailableSheetTabs(tabs);
             
-            if (tabs.length > 0 && !sheetTabName) {
-                setSheetTabName(tabs[0]);
+            if (tabs.length > 0 && sheetTabName.length === 0) {
+                setSheetTabName([tabs[0]]);
             }
             
             hideLoadingToast();
@@ -769,50 +796,13 @@ export default function App() {
                 } catch (e) { }
 
                 try {
-                    let allBoards = [];
-                    let isLast = false;
-                    let startAt = 0;
-                    
-                    while (!isLast) {
-                        const bRes = await fetchWithJiraAuth(`https://api.atlassian.com/ex/jira/${jiraCloudId}/rest/agile/1.0/board?startAt=${startAt}&maxResults=50`, { 
-                            headers: { 'Accept': 'application/json' } 
-                        });
-                        
-                        if (bRes.ok) {
-                            const bData = await bRes.json();
-                            if (bData && bData.values && bData.values.length > 0) {
-                                allBoards = allBoards.concat(bData.values);
-                                startAt += bData.values.length;
-                                isLast = bData.isLast !== undefined ? bData.isLast : true;
-                            } else {
-                                isLast = true;
-                            }
-                        } else {
-                            const errText = await bRes.text();
-                            console.error("Lỗi API khi tải danh sách Board:", errText);
-                            if (!isAuto) {
-                                hideLoadingToast();
-                                showToast(`Lỗi Jira (${bRes.status})`, "error");
-                            }
-                            break;
-                        }
-                    }
-
-                    if (allBoards.length > 0) {
-                        const fetchedBoards = allBoards.map(b => ({
-                            id: b.id,
-                            name: b.name,
-                            value: b.id.toString(),
-                            label: `${b.name} (${b.id})`
-                        }));
-                        
-                        fetchedBoards.sort((a, b) => a.name.localeCompare(b.name));
-                        
-                        setAvailableBoards(fetchedBoards);
-                        
-                        if (!selectedBoardId) {
-                            setSelectedBoardId(fetchedBoards[0].id.toString());
-                            setSelectedBoardName(fetchedBoards[0].name);
+                    const bRes = await fetchWithJiraAuth(`https://api.atlassian.com/ex/jira/${jiraCloudId}/rest/agile/1.0/board?projectKeyOrId=${key}`, { headers: { 'Accept': 'application/json' } });
+                    if (bRes.ok) {
+                        const bData = await bRes.json();
+                        if (bData && bData.values && bData.values.length > 0) {
+                            const fetchedBoards = bData.values.map(b => ({ id: b.id, name: b.name }));
+                            setAvailableBoards(fetchedBoards);
+                            setSelectedBoardId(fetchedBoards[0].id);
                         }
                     }
                 } catch (e) {
@@ -999,7 +989,6 @@ export default function App() {
         const qcNamesInput = qcNames.trim();
         const versionGameInput = versionGame.trim();
         const versionAppInput = versionApp.trim();
-        const sheetTabNameInput = sheetTabName.trim();
         const isAppRequired = chkWebapp || chkApptek;
         const selectedScopes = scopesList.filter(scope => checkedScopesMap[scope] === undefined ? false : checkedScopesMap[scope]);
         const sharedInputValue = linkShared.trim();
@@ -1012,13 +1001,13 @@ export default function App() {
         if (projectKeysInput.length === 0) errors.push("Project Key");
         if (!boardIdInput) errors.push("Board ID");
         if (!customReportNameInput) errors.push("Report Name");
-        if (!sheetTabNameInput) errors.push("Sheet Tab Name");
+        if (sheetTabName.length === 0) errors.push("Sheet Tab Name");
         if (!qcNamesInput) errors.push("QC Team");
         if (!versionGameInput) errors.push("Game Version");
         if (isAppRequired && !versionAppInput) errors.push("App Version");
         if (selectedScopes.length === 0) errors.push("Scope of Testing (at least 1)");
 
-        if (activeTabMode === 'hierarchy' && !selectedTaskKey) {
+        if (activeTabMode === 'hierarchy' && selectedTaskKey.length === 0) {
             errors.push("Target Task / [QC] Bugs List");
         }
 	
@@ -1040,7 +1029,6 @@ export default function App() {
 
         try {
             let finalGameId = projectKeysInput[0];
-            const actualSheetTabName = sheetTabNameInput;
             const urlInput = "https://docs.google.com/spreadsheets/d/1XF2bOLyXoVM3Py6qYBidSe1tcfOqMuuwg14wnLVf1lA/edit?gid=45247494#gid=45247494";
 
             setOutputReport('');
@@ -1059,48 +1047,128 @@ export default function App() {
             let finalReport = '';
             let autoTestcaseLink = '';
             let rawSheetItems = [];
+            let doneHeaderPercent = '0%';
+            let inProgressHeaderPercent = '0%';
+            let remainingHeaderPercent = '0%';
+            let sheetValidationErrors = [];
 
             try {
                 const spreadsheetIdMatch = urlInput.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
                 if (!spreadsheetIdMatch) throw new Error("Invalid spreadsheet URL.");
                 const spreadsheetId = spreadsheetIdMatch[1];
-                const sheetApiUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/'${encodeURIComponent(actualSheetTabName)}'`;
-                let sheetRes = await fetch(sheetApiUrl, { headers: { 'Authorization': `Bearer ${token}` } });
-                if (sheetRes.status === 401) {
-                    token = await getGoogleTokenAsync(true);
-                    sheetRes = await fetch(sheetApiUrl, { headers: { 'Authorization': `Bearer ${token}` } });
-                }
-                if (!sheetRes.ok) {
-                    if (sheetRes.status === 403) throw new Error("Permission denied. Check sharing settings.");
-                    if (sheetRes.status === 400) throw new Error(`Tab '${actualSheetTabName}' not found.`);
-                    throw new Error(`Google Sheets API Error: ${sheetRes.statusText}`);
-                }
-                const sheetData = await sheetRes.json();
-                const rows = sheetData.values || [];
-                const a1ApiUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?ranges='${encodeURIComponent(actualSheetTabName)}'!A1&fields=sheets.data.rowData.values(hyperlink,formattedValue,textFormatRuns,chipRuns)`;
-                const a1Res = await fetch(a1ApiUrl, { headers: { 'Authorization': `Bearer ${token}` } });
-                if (a1Res.ok) {
-                    const a1Data = await a1Res.json();
-                    try {
-                        const cell = a1Data.sheets[0].data[0].rowData[0].values[0];
-                        let extractedLink = '';
-                        if (cell.hyperlink) extractedLink = cell.hyperlink;
-                        else if (cell.chipRuns && cell.chipRuns.length > 0) {
-                            for (const run of cell.chipRuns) {
-                                if (run.chip && run.chip.richLinkProperties && run.chip.richLinkProperties.uri) { extractedLink = run.chip.richLinkProperties.uri; break; }
+                
+                for (const tabName of sheetTabName) {
+                    const sheetApiUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/'${encodeURIComponent(tabName)}'`;
+                    let sheetRes = await fetch(sheetApiUrl, { headers: { 'Authorization': `Bearer ${token}` } });
+                    if (sheetRes.status === 401) {
+                        token = await getGoogleTokenAsync(true);
+                        sheetRes = await fetch(sheetApiUrl, { headers: { 'Authorization': `Bearer ${token}` } });
+                    }
+                    if (!sheetRes.ok) {
+                        if (sheetRes.status === 403) throw new Error("Permission denied. Check sharing settings.");
+                        if (sheetRes.status === 400) throw new Error(`Tab '${tabName}' not found.`);
+                        throw new Error(`Google Sheets API Error: ${sheetRes.statusText}`);
+                    }
+                    const sheetData = await sheetRes.json();
+                    const rows = sheetData.values || [];
+                    
+                    if (!autoTestcaseLink) {
+                        const a1ApiUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?ranges='${encodeURIComponent(tabName)}'!A1&fields=sheets.data.rowData.values(hyperlink,formattedValue,textFormatRuns,chipRuns)`;
+                        const a1Res = await fetch(a1ApiUrl, { headers: { 'Authorization': `Bearer ${token}` } });
+                        if (a1Res.ok) {
+                            const a1Data = await a1Res.json();
+                            try {
+                                const cell = a1Data.sheets[0].data[0].rowData[0].values[0];
+                                let extractedLink = '';
+                                if (cell.hyperlink) extractedLink = cell.hyperlink;
+                                else if (cell.chipRuns && cell.chipRuns.length > 0) {
+                                    for (const run of cell.chipRuns) {
+                                        if (run.chip && run.chip.richLinkProperties && run.chip.richLinkProperties.uri) { extractedLink = run.chip.richLinkProperties.uri; break; }
+                                    }
+                                } else if (cell.textFormatRuns && cell.textFormatRuns.length > 0) {
+                                    for (const run of cell.textFormatRuns) {
+                                        if (run.format && run.format.link && run.format.link.uri) { extractedLink = run.format.link.uri; break; }
+                                    }
+                                }
+                                if (!extractedLink) extractedLink = cell.formattedValue || '';
+                                autoTestcaseLink = extractedLink.trim();
+                            } catch (e) {
+                                autoTestcaseLink = (rows.length > 0 && rows[0].length > 0) ? rows[0][0].toString().trim() : '';
                             }
-                        } else if (cell.textFormatRuns && cell.textFormatRuns.length > 0) {
-                            for (const run of cell.textFormatRuns) {
-                                if (run.format && run.format.link && run.format.link.uri) { extractedLink = run.format.link.uri; break; }
+                        } else {
+                            autoTestcaseLink = (rows.length > 0 && rows[0].length > 0) ? rows[0][0].toString().trim() : '';
+                        }
+                    }
+
+                    if (rows.length > 1) {
+                        for (let i = 1; i < rows.length; i++) {
+                            const row = rows[i];
+                            for (let j = 0; j < row.length; j++) {
+                                const cellText = row[j] ? row[j].toString().trim().toLowerCase() : '';
+                                if (cellText === '% done') {
+                                    let nextVal = row[j + 1] ? row[j + 1].toString().trim() : '';
+                                    if (nextVal && !nextVal.includes('%') && !isNaN(nextVal)) nextVal = ((parseFloat(nextVal) * 100).toFixed(2) + '%').replace('.00%', '%');
+                                    else if (nextVal) nextVal = nextVal.replace('.00%', '%');
+                                    doneHeaderPercent = nextVal || '0%';
+                                } else if (cellText === '% in progress') {
+                                    let nextVal = row[j + 1] ? row[j + 1].toString().trim() : '';
+                                    if (nextVal && !nextVal.includes('%') && !isNaN(nextVal)) nextVal = ((parseFloat(nextVal) * 100).toFixed(2) + '%').replace('.00%', '%');
+                                    else if (nextVal) nextVal = nextVal.replace('.00%', '%');
+                                    inProgressHeaderPercent = nextVal || '0%';
+                                } else if (cellText === '% remaining') {
+                                    let nextVal = row[j + 1] ? row[j + 1].toString().trim() : '';
+                                    if (nextVal && !nextVal.includes('%') && !isNaN(nextVal)) nextVal = ((parseFloat(nextVal) * 100).toFixed(2) + '%').replace('.00%', '%');
+                                    else if (nextVal) nextVal = nextVal.replace('.00%', '%');
+                                    remainingHeaderPercent = nextVal || '0%';
+                                }
+                            }
+
+                            const colA = row[0] ? row[0].toString().trim() : '';
+                            const colB = row[1] ? row[1].toString().trim() : '';
+                            let colE = row[4] ? row[4].toString().trim() : '';
+                            const colG = row[6] ? row[6].toString().trim() : '';
+                            const colH = row[7] ? row[7].toString().trim() : '';
+
+                            if (colA && colB && colG) {
+                                let statusKey = colG.toUpperCase();
+                                if (statusKey === 'REMAINING') statusKey = 'REMAINS';
+
+                                let isStatusFailed = colG.toLowerCase().includes('fail');
+                                if (isStatusFailed) {
+                                    statusKey = 'IN PROGRESS'; 
+                                }
+
+                                if (colE && !colE.includes('%') && !isNaN(colE)) colE = ((parseFloat(colE) * 100).toFixed(2) + '%').replace('.00%', '%');
+                                else if (!colE) colE = '0%';
+                                else colE = colE.replace('.00%', '%');
+
+                                if (statusKey === 'REMAINS' && colE !== '100%') {
+                                    sheetValidationErrors.push(`- [${colA}]: Is in REMAINS but % Remaining = ${colE} (Must be 100%)`);
+                                }
+                                if (statusKey === 'DONE' && colE !== '0%') {
+                                    sheetValidationErrors.push(`- [${colA}]: Is in DONE but % Remaining = ${colE} (Must be 0%)`);
+                                }
+                                
+                                let displayRemaining = colE;
+                                
+                                if ((statusKey === 'IN PROGRESS' && colH.toLowerCase().includes('failed')) || isStatusFailed) {
+                                    displayRemaining = 'Failed';
+                                }
+                                if (statusKey === 'DONE' && colH.toLowerCase().includes('warning')) displayRemaining = 'Passed with warning';
+                                
+                                let disp = displayRemaining;
+                                if (statusKey === 'DONE' && disp !== 'Passed with warning') disp = '';
+                                if (statusKey === 'REMAINS') disp = '';
+
+                                rawSheetItems.push({
+                                    name: colA,
+                                    statusKey: statusKey,
+                                    displayValue: disp, 
+                                    rowOriginalIndex: rawSheetItems.length
+                                });
                             }
                         }
-                        if (!extractedLink) extractedLink = cell.formattedValue || '';
-                        autoTestcaseLink = extractedLink.trim();
-                    } catch (e) {
-                        autoTestcaseLink = (rows.length > 0 && rows[0].length > 0) ? rows[0][0].toString().trim() : '';
                     }
-                } else {
-                    autoTestcaseLink = (rows.length > 0 && rows[0].length > 0) ? rows[0][0].toString().trim() : '';
                 }
 
                 if (autoTestcaseLink && (autoTestcaseLink.includes("drive.google.com") || autoTestcaseLink.includes("docs.google.com"))) {
@@ -1114,80 +1182,7 @@ export default function App() {
                     if (driveCheck.id) finalGameId = driveCheck.id;
                 }
 
-                let doneHeaderPercent = '0%';
-                let inProgressHeaderPercent = '0%';
-                let remainingHeaderPercent = '0%';
-                let sheetValidationErrors = [];
-
-                if (rows.length > 1) {
-                    for (let i = 1; i < rows.length; i++) {
-                        const row = rows[i];
-                        for (let j = 0; j < row.length; j++) {
-                            const cellText = row[j] ? row[j].toString().trim().toLowerCase() : '';
-                            if (cellText === '% done') {
-                                let nextVal = row[j + 1] ? row[j + 1].toString().trim() : '';
-                                if (nextVal && !nextVal.includes('%') && !isNaN(nextVal)) nextVal = ((parseFloat(nextVal) * 100).toFixed(2) + '%').replace('.00%', '%');
-                                else if (nextVal) nextVal = nextVal.replace('.00%', '%');
-                                doneHeaderPercent = nextVal || '0%';
-                            } else if (cellText === '% in progress') {
-                                let nextVal = row[j + 1] ? row[j + 1].toString().trim() : '';
-                                if (nextVal && !nextVal.includes('%') && !isNaN(nextVal)) nextVal = ((parseFloat(nextVal) * 100).toFixed(2) + '%').replace('.00%', '%');
-                                else if (nextVal) nextVal = nextVal.replace('.00%', '%');
-                                inProgressHeaderPercent = nextVal || '0%';
-                            } else if (cellText === '% remaining') {
-                                let nextVal = row[j + 1] ? row[j + 1].toString().trim() : '';
-                                if (nextVal && !nextVal.includes('%') && !isNaN(nextVal)) nextVal = ((parseFloat(nextVal) * 100).toFixed(2) + '%').replace('.00%', '%');
-                                else if (nextVal) nextVal = nextVal.replace('.00%', '%');
-                                remainingHeaderPercent = nextVal || '0%';
-                            }
-                        }
-
-                        const colA = row[0] ? row[0].toString().trim() : '';
-                        const colB = row[1] ? row[1].toString().trim() : '';
-                        let colE = row[4] ? row[4].toString().trim() : '';
-                        const colG = row[6] ? row[6].toString().trim() : '';
-                        const colH = row[7] ? row[7].toString().trim() : '';
-
-                        if (colA && colB && colG) {
-                            let statusKey = colG.toUpperCase();
-                            if (statusKey === 'REMAINING') statusKey = 'REMAINS';
-
-                            let isStatusFailed = colG.toLowerCase().includes('fail');
-                            if (isStatusFailed) {
-                                statusKey = 'IN PROGRESS'; 
-                            }
-
-                            if (colE && !colE.includes('%') && !isNaN(colE)) colE = ((parseFloat(colE) * 100).toFixed(2) + '%').replace('.00%', '%');
-                            else if (!colE) colE = '0%';
-                            else colE = colE.replace('.00%', '%');
-
-                            if (statusKey === 'REMAINS' && colE !== '100%') {
-                                sheetValidationErrors.push(`- [${colA}]: Is in REMAINS but % Remaining = ${colE} (Must be 100%)`);
-                            }
-                            if (statusKey === 'DONE' && colE !== '0%') {
-                                sheetValidationErrors.push(`- [${colA}]: Is in DONE but % Remaining = ${colE} (Must be 0%)`);
-                            }
-                            
-                            let displayRemaining = colE;
-                            
-                            if ((statusKey === 'IN PROGRESS' && colH.toLowerCase().includes('failed')) || isStatusFailed) {
-                                displayRemaining = 'Failed';
-                            }
-                            if (statusKey === 'DONE' && colH.toLowerCase().includes('warning')) displayRemaining = 'Passed with warning';
-                            
-                            let disp = displayRemaining;
-                            if (statusKey === 'DONE' && disp !== 'Passed with warning') disp = '';
-                            if (statusKey === 'REMAINS') disp = '';
-
-                            rawSheetItems.push({
-                                name: colA,
-                                statusKey: statusKey,
-                                displayValue: disp, 
-                                rowOriginalIndex: i
-                            });
-                        }
-                    }
-
+                if (rawSheetItems.length > 0) {
                     let normalizedItems = rawSheetItems.map(item => {
                         let lower = item.name.toLowerCase();
                         let finalName = item.name;
@@ -1418,10 +1413,11 @@ export default function App() {
                 let finalJql = "";
 
                 if (activeTabMode === 'hierarchy') {
-                    finalJql = `parent = "${selectedTaskKey}" AND issuetype in (Bug, "Bug/Defect", Improvement, Question, Sub-task) ORDER BY created DESC`;
+                    const tasksJql = selectedTaskKey.map(k => `"${k}"`).join(',');
+                    finalJql = `parent in (${tasksJql}) AND issuetype in (Bug, "Bug/Defect", Improvement, Question, Sub-task) ORDER BY created DESC`;
 
-                    if (selectedEpicKey) {
-                        const ep = epicOptions.find(e => e.value === selectedEpicKey);
+                    if (selectedEpicKey.length > 0) {
+                        const ep = epicOptions.find(e => e.value === selectedEpicKey[0]);
                         if (ep) targetName = ep.label.replace(/\s*\([^)]*\)$/, '');
                     }
                 } else {
@@ -1827,14 +1823,12 @@ export default function App() {
                                     setAvailableProjects([]);
                                     setEpicOptions([]);
                                     setEpicTasksList([]);
-                                    setSelectedEpicKey('');
-                                    setSelectedTaskKey('');
+                                    setSelectedEpicKey([]);
+                                    setSelectedTaskKey([]);
                                     setJiraStatuses([]);
                                     setJiraPrioritiesList([]);
                                     setJiraTagsList([]);
                                     setAuthTrigger(prev => prev + 1);
-                                    setSelectedBoardId('');
-                                    setSelectedBoardName('');
                                     showToast("Switched Jira Workspace", 'success');
                                 }}
                                 className="h-10 px-3 bg-white border border-slate-300 rounded-xl text-xs font-medium text-slate-800 focus:outline-none focus:border-indigo-600 shadow-sm"
@@ -1902,38 +1896,8 @@ export default function App() {
                     </div>
 
                     <div className="flex flex-col gap-1.5 bg-indigo-50/40 p-3 rounded-xl border border-indigo-100">
-                        <div className="flex justify-between items-center">
-                            <label className="text-xs font-bold text-indigo-900">Board Info <span className="text-rose-500">*</span></label>
-                            {availableBoards.length > 0 && (
-                                <select
-                                    onChange={e => {
-                                        const bId = e.target.value;
-                                        if (bId) {
-                                            const board = availableBoards.find(b => b.id.toString() === bId);
-                                            if (board) {
-                                                setSelectedBoardId(board.id.toString());
-                                                setSelectedBoardName(board.name);
-                                                setFormErrors(prev => prev.filter(err => err !== "Board ID"));
-                                            }
-                                        }
-                                    }}
-                                    className="h-6 px-1 bg-white border border-indigo-200 rounded text-[10px] text-indigo-700 cursor-pointer outline-none focus:border-indigo-600"
-                                >
-                                    <option value="">▼ Chọn từ danh sách Jira...</option>
-                                    {availableBoards.map(b => (
-                                        <option key={b.id} value={b.id}>{b.name} ({b.id})</option>
-                                    ))}
-                                </select>
-                            )}
-                        </div>
+                        <label className="text-xs font-bold text-indigo-900">Board ID <span className="text-rose-500">*</span></label>
                         <div className="flex gap-2">
-                            <input
-                                type="text"
-                                value={selectedBoardName}
-                                onChange={e => setSelectedBoardName(e.target.value)}
-                                placeholder="Nhập tên Board..."
-                                className="flex-1 h-10 px-3 bg-white border border-slate-300 rounded-xl text-xs font-medium text-slate-800 focus:outline-none focus:border-indigo-600"
-                            />
                             <input
                                 ref={boardIdRef}
                                 type="text"
@@ -1942,9 +1906,25 @@ export default function App() {
                                     setSelectedBoardId(e.target.value);
                                     setFormErrors(prev => prev.filter(err => err !== "Board ID"));
                                 }}
-                                placeholder="ID..."
-                                className={`w-28 h-10 px-3 bg-white border rounded-xl text-xs font-medium text-slate-800 focus:outline-none transition-colors ${formErrors.includes("Board ID") ? 'border-rose-500 ring-1 ring-rose-500' : 'border-slate-300 focus:border-indigo-600'}`}
+                                placeholder="Type or select Board ID..."
+                                className={`flex-1 h-10 px-3 bg-white border rounded-xl text-xs font-medium text-slate-800 focus:outline-none transition-colors ${formErrors.includes("Board ID") ? 'border-rose-500 ring-1 ring-rose-500' : 'border-slate-300 focus:border-indigo-600'}`}
                             />
+                            {availableBoards.length > 0 && (
+                                <select
+                                    onChange={e => {
+                                        if (e.target.value) {
+                                            setSelectedBoardId(e.target.value);
+                                            setFormErrors(prev => prev.filter(err => err !== "Board ID"));
+                                        }
+                                    }}
+                                    className="w-10 h-10 bg-white border border-slate-300 rounded-xl text-xs text-slate-800 cursor-pointer outline-none focus:border-indigo-600"
+                                >
+                                    <option value="">▼</option>
+                                    {availableBoards.map(b => (
+                                        <option key={b.id} value={b.id}>{b.name} ({b.id})</option>
+                                    ))}
+                                </select>
+                            )}
                         </div>
                     </div>
 
@@ -1956,6 +1936,7 @@ export default function App() {
                                     {isLoadingEpics && <span className="text-[10px] text-indigo-600 animate-pulse font-medium">Syncing Epics...</span>}
                                 </div>
                                 <SearchableDropdown
+                                    isMulti={true}
                                     options={epicOptions}
                                     value={selectedEpicKey}
                                     onChange={handleEpicSelect}
@@ -1969,6 +1950,7 @@ export default function App() {
                                     {isLoadingTasks && <span className="text-[10px] text-indigo-600 animate-pulse font-medium">Loading Tasks...</span>}
                                 </div>
                                 <SearchableDropdown
+                                    isMulti={true}
                                     options={epicTasksList}
                                     value={selectedTaskKey}
                                     onChange={val => {
@@ -1998,6 +1980,7 @@ export default function App() {
                             <div className="flex gap-2">
                                 <div className="flex-1">
                                     <SearchableDropdown 
+                                        isMulti={true}
                                         ref={sheetTabNameRef}
                                         options={availableSheetTabs.map(t => ({ value: t, label: t }))} 
                                         value={sheetTabName} 
@@ -2032,7 +2015,7 @@ export default function App() {
                                     setCustomReportName(e.target.value);
                                     setFormErrors(prev => prev.filter(err => err !== "Report Name"));
                                 }} 
-                                placeholder="Required: Enter Report Name" 
+                                placeholder="Id - Game Name" 
                                 className={`w-full h-10 px-3 bg-slate-50 border rounded-xl text-xs font-medium text-slate-800 focus:outline-none transition-colors ${formErrors.includes("Report Name") ? 'border-rose-500 ring-1 ring-rose-500' : 'border-slate-300 focus:border-indigo-600'}`} 
                             />
                         </div>
