@@ -1781,7 +1781,7 @@ export default function App() {
 
     return (
         <div className="min-h-screen bg-slate-100 text-slate-800 font-sans p-6 pb-36">
-            <header className="w-full mb-6 flex justify-between items-center">
+            <header className="w-full mb-6 flex flex-wrap justify-between items-center gap-4">
                 <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-2xl bg-indigo-50 border border-indigo-200 flex items-center justify-center shadow-sm">
                         <svg className="w-6 h-6 text-indigo-600" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
@@ -1792,28 +1792,30 @@ export default function App() {
                     </div>
                 </div>
 
-                <div className="bg-slate-200/80 p-1 rounded-2xl flex items-center gap-1 shadow-inner border border-slate-300">
+                <div className="bg-slate-200/60 p-1.5 rounded-xl flex items-center gap-1 shadow-inner border border-slate-300/50">
                     <button
                         type="button"
                         onClick={() => handleSwitchMode('classic')}
-                        className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${activeTabMode === 'classic' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
+                        className={`px-4 py-2 rounded-lg text-xs font-bold transition-all duration-200 ${activeTabMode === 'classic' ? 'bg-white text-slate-800 shadow-sm ring-1 ring-slate-200' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-200/50'}`}
                     >
-                        Standard Flow (Old Board)
+                        Standard Flow
                     </button>
                     <button
                         type="button"
                         onClick={() => handleSwitchMode('hierarchy')}
-                        className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${activeTabMode === 'hierarchy' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
+                        className={`px-4 py-2 rounded-lg text-xs font-bold transition-all duration-200 flex items-center gap-1.5 ${activeTabMode === 'hierarchy' ? 'bg-white text-indigo-700 shadow-sm ring-1 ring-slate-200' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-200/50'}`}
                     >
-                        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                        Hierarchical Flow (New Board)
+                        <span className={`w-2 h-2 rounded-full ${activeTabMode === 'hierarchy' ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`}></span>
+                        Tree Flow
                     </button>
                 </div>
 
-                <div className="flex items-center gap-4">
+                <div className="flex items-center gap-3">
                     {workspaces.length > 0 && jiraToken && (
-                        <div className="flex items-center gap-2">
-                            <label className="text-xs font-semibold text-slate-600">Workspace:</label>
+                        <div className="relative flex items-center bg-white border border-slate-200 rounded-xl shadow-sm hover:border-indigo-300 transition-colors">
+                            <div className="pl-3 pr-2 py-2 border-r border-slate-100 flex items-center">
+                                <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" /></svg>
+                            </div>
                             <select 
                                 value={jiraCloudId || ''} 
                                 onChange={e => {
@@ -1831,7 +1833,8 @@ export default function App() {
                                     setAuthTrigger(prev => prev + 1);
                                     showToast("Switched Jira Workspace", 'success');
                                 }}
-                                className="h-10 px-3 bg-white border border-slate-300 rounded-xl text-xs font-medium text-slate-800 focus:outline-none focus:border-indigo-600 shadow-sm"
+                                className="h-9 pl-2 pr-8 bg-transparent text-xs font-semibold text-slate-700 focus:outline-none cursor-pointer appearance-none"
+                                style={{ WebkitAppearance: 'none', MozAppearance: 'none' }}
                             >
                                 {workspaces.map(ws => (
                                     <option key={ws.id} value={ws.id}>
@@ -1839,16 +1842,19 @@ export default function App() {
                                     </option>
                                 ))}
                             </select>
+                            <div className="absolute right-2.5 pointer-events-none">
+                                <svg className="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" /></svg>
+                            </div>
                         </div>
                     )}
 
-                    <div className="flex items-center gap-3 bg-white/90 border border-slate-200 px-4 py-2 rounded-2xl backdrop-blur-md shadow-sm">
+                    <div className="flex items-center gap-3 bg-white/90 border border-slate-200 px-3 py-1.5 rounded-xl backdrop-blur-md shadow-sm">
                         <span className={`w-2.5 h-2.5 rounded-full ${jiraToken && jiraCloudId ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)]' : 'bg-slate-400'}`}></span>
-                        <span className="text-xs font-semibold text-slate-700">
+                        <span className="text-xs font-semibold text-slate-700 hidden sm:inline-block">
                             {jiraToken && jiraCloudId ? "Jira Connected" : "Jira Disconnected"}
                         </span>
                         {jiraToken && jiraCloudId ? (
-                            <button onClick={handleJiraDisconnect} className="text-xs px-3 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl border border-slate-300 transition-all">
+                            <button onClick={handleJiraDisconnect} className="text-[11px] px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-lg border border-slate-300 transition-all">
                                 Disconnect
                             </button>
                         ) : (
@@ -2290,133 +2296,4 @@ export default function App() {
                                         {jiraPrioritiesList.map(priority => {
                                             const isChecked = !!checkedPrioritiesMap[priority];
                                             return (
-                                                <div key={priority} onClick={() => setCheckedPrioritiesMap(p => ({ ...p, [priority]: !isChecked }))} className={`px-2.5 py-1.5 rounded-lg border flex items-center gap-1.5 cursor-pointer transition-all ${isChecked ? 'bg-indigo-50 border-indigo-300 text-indigo-700' : 'bg-white border-slate-200 text-slate-600'}`}>
-                                                    <span className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center text-[8px] font-bold ${isChecked ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white border-slate-300'}`}>{isChecked ? '✓' : ''}</span>
-                                                    <span className="text-[10px] font-semibold">{priority}</span>
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                    )}
-
-                    {jiraTagsList.length > 0 && (
-                        <div className="bg-slate-50 border border-slate-200 rounded-xl overflow-hidden mt-1">
-                            <button type="button" onClick={() => setIsTagAccordionOpen(!isTagAccordionOpen)} className="w-full px-4 py-3 flex items-center justify-between text-xs font-bold text-slate-700 hover:bg-slate-100 transition-all">
-                                <span>Filter Tags [Type]</span>
-                                <span className="text-slate-400">{isTagAccordionOpen ? '▲' : '▼'}</span>
-                            </button>
-
-                            {isTagAccordionOpen && (
-                                <div className="p-3 border-t border-slate-200 bg-slate-50">
-                                    <div className="flex justify-between items-center mb-2">
-                                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-tight">Select Tags to Include</span>
-                                        <div className="flex gap-1 text-[9px]">
-                                            <button type="button" onClick={() => toggleAllJiraTags(true)} className="text-indigo-600 hover:underline font-bold">All</button>
-                                            <span className="text-slate-300">|</span>
-                                            <button type="button" onClick={() => toggleAllJiraTags(false)} className="text-slate-500 hover:underline">None</button>
-                                        </div>
-                                    </div>
-                                    <div className="flex flex-wrap gap-2 max-h-40 overflow-y-auto">
-                                        {jiraTagsList.map(tag => {
-                                            const isChecked = !!checkedJiraTagsMap[tag];
-                                            return (
-                                                <div key={tag} onClick={() => setCheckedJiraTagsMap(p => ({ ...p, [tag]: !isChecked }))} className={`px-2 py-1.5 rounded-lg border flex items-center gap-1.5 cursor-pointer transition-all ${isChecked ? 'bg-indigo-50 border-indigo-300 text-indigo-700' : 'bg-white border-slate-200 text-slate-600'}`}>
-                                                    <span className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center text-[8px] font-bold ${isChecked ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white border-slate-300'}`}>{isChecked ? '✓' : ''}</span>
-                                                    <span className="text-[10px] font-semibold">{tag}</span>
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                    )}
-                </section>
-
-            </main>
-
-            <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40">
-                <div className="bg-white/90 backdrop-blur-md border border-slate-200 text-slate-900 rounded-2xl p-2 shadow-2xl flex items-center justify-center gap-2">
-                    <button
-                        type="button"
-                        onClick={handleGenerate}
-                        disabled={isGenerating}
-                        className="w-32 h-9 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-md transition-all disabled:opacity-50 flex items-center justify-center gap-1.5 whitespace-nowrap"
-                    >
-                        {isGenerating ? (
-                            <>
-                                <svg className="animate-spin h-3.5 w-3.5 text-white" fill="none" viewBox="0 0 24 24">
-                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                </svg>
-                                <span>Generating...</span>
-                            </>
-                        ) : (
-                            <span>Generate</span>
-                        )}
-                    </button>
-
-                    <button
-                        type="button"
-                        onClick={() => setIsPreviewOpen(true)}
-                        disabled={!outputReport}
-                        className="w-32 h-9 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-xl border border-slate-300 transition-all disabled:opacity-40 flex items-center justify-center whitespace-nowrap"
-                    >
-                        Preview
-                    </button>
-
-                    <button
-                        type="button"
-                        onClick={executeCopy}
-                        disabled={!outputReport}
-                        className="w-32 h-9 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-xl border border-slate-300 transition-all disabled:opacity-40 flex items-center justify-center gap-1.5 whitespace-nowrap"
-                    >
-                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
-                        </svg>
-                        <span>Copy</span>
-                    </button>
-                </div>
-            </div>
-
-            {isPreviewOpen && (
-                <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-                    <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl w-full max-w-4xl max-h-[85vh] flex flex-col overflow-hidden">
-                        <div className="px-6 py-4 border-b border-slate-200 flex justify-between items-center bg-slate-50">
-                            <h3 className="text-sm font-bold text-slate-800">Generated Report Preview</h3>
-                            <button type="button" onClick={() => setIsPreviewOpen(false)} className="text-slate-400 hover:text-slate-600 p-1 rounded-lg transition-all">✕</button>
-                        </div>
-                        <div className="p-6 overflow-y-auto flex-1 bg-slate-50 text-slate-800 font-mono text-xs whitespace-pre-wrap leading-relaxed select-text">
-                            {outputReport}
-                        </div>
-                        <div className="px-6 py-4 border-t border-slate-200 flex justify-end gap-3 bg-slate-50">
-                            <button type="button" onClick={() => { executeCopy(); setIsPreviewOpen(false); }} className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl shadow-md transition-all flex items-center gap-1.5">
-                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" /></svg>
-                                <span>Copy to Clipboard</span>
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {toasts.length > 0 && (
-                <div className="fixed top-5 left-1/2 -translate-x-1/2 z-[100] flex flex-col gap-3 w-full max-w-lg pointer-events-none">
-                    {toasts.map(toast => (
-                        <div key={toast.id} className={`pointer-events-auto p-4 rounded-2xl shadow-xl border text-sm font-bold flex items-center justify-between gap-4 transition-all ${toast.type === 'error' ? 'bg-rose-50 border-rose-200 text-rose-800' : (toast.type === 'loading' ? 'bg-indigo-50 border-indigo-200 text-indigo-800' : 'bg-emerald-50 border-emerald-200 text-emerald-800')}`}>
-                            <div className="flex items-center gap-3">
-                                {toast.type === 'loading' && <svg className="animate-spin h-5 w-5 text-indigo-600" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>}
-                                <span className="text-base leading-relaxed">{toast.message}</span>
-                            </div>
-                            {toast.type !== 'loading' && (
-                                <button type="button" onClick={() => setToasts(prev => prev.filter(t => t.id !== toast.id))} className="text-slate-400 hover:text-slate-700 w-8 h-8 flex items-center justify-center rounded-full hover:bg-black/5 transition-all">✕</button>
-                            )}
-                        </div>
-                    ))}
-                </div>
-            )}
-        </div>
-    );
-}
+                                                <div key={priority}
