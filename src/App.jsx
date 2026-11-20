@@ -28,7 +28,7 @@ const extractDomain = (url) => {
     }
 };
 
-const SearchableDropdown = React.forwardRef(({ options, value, onChange, placeholder, isError }, ref) => {
+const SearchableDropdown = React.forwardRef(({ options, value, onChange, placeholder, isError, isMulti = false }, ref) => {
     const [isOpen, setIsOpen] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
     const wrapperRef = useRef(null);
@@ -47,18 +47,43 @@ const SearchableDropdown = React.forwardRef(({ options, value, onChange, placeho
         (opt.label || opt).toString().toLowerCase().includes(searchTerm.toLowerCase())
     );
 
-    const displayValue = options.find(opt => (opt.value !== undefined ? opt.value : opt) === value);
-    const displayLabel = displayValue ? (displayValue.label || displayValue) : value;
+    let displayLabel = placeholder;
+    if (isMulti) {
+        if (Array.isArray(value) && value.length > 0) {
+            displayLabel = value.map(v => {
+                const opt = options.find(o => (o.value !== undefined ? o.value : o) === v);
+                return opt ? (opt.label || opt) : v;
+            }).join(', ');
+        }
+    } else {
+        const displayValue = options.find(opt => (opt.value !== undefined ? opt.value : opt) === value);
+        if (displayValue) displayLabel = (displayValue.label || displayValue);
+        else if (value) displayLabel = value;
+    }
+
+    const handleSelect = (val) => {
+        if (isMulti) {
+            const newValue = Array.isArray(value) ? [...value] : [];
+            if (newValue.includes(val)) {
+                onChange(newValue.filter(v => v !== val));
+            } else {
+                onChange([...newValue, val]);
+            }
+        } else {
+            onChange(val);
+            setIsOpen(false);
+        }
+    };
 
     return (
         <div ref={wrapperRef} className="relative w-full">
             <div 
                 ref={ref}
                 tabIndex={0}
-                className={`h-10 px-3.5 bg-white border rounded-xl text-xs font-semibold text-slate-900 flex items-center justify-between cursor-pointer transition-all ${isError ? 'border-rose-500 ring-1 ring-rose-500' : 'border-slate-300 hover:border-slate-400 focus:border-indigo-600 focus:ring-1 focus:ring-indigo-600 outline-none'}`}
+                className={`min-h-[40px] px-3.5 py-2 bg-white border rounded-xl text-xs font-semibold text-slate-900 flex items-center justify-between cursor-pointer transition-all ${isError ? 'border-rose-500 ring-1 ring-rose-500' : 'border-slate-300 hover:border-slate-400 focus:border-indigo-600 focus:ring-1 focus:ring-indigo-600 outline-none'}`}
                 onClick={() => { setIsOpen(!isOpen); setSearchTerm(''); }}
             >
-                <span className="truncate">{displayLabel || placeholder}</span>
+                <span className="truncate">{displayLabel}</span>
                 <span className="text-slate-400 ml-2 text-[10px]">▼</span>
             </div>
             {isOpen && (
@@ -77,13 +102,17 @@ const SearchableDropdown = React.forwardRef(({ options, value, onChange, placeho
                         {filteredOptions.length > 0 ? filteredOptions.map((opt, i) => {
                             const val = opt.value !== undefined ? opt.value : opt;
                             const lbl = opt.label !== undefined ? opt.label : opt;
+                            const isSelected = isMulti ? (Array.isArray(value) && value.includes(val)) : (value === val);
                             return (
                                 <div 
                                     key={i} 
-                                    className="px-3 py-2.5 text-xs font-medium text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 cursor-pointer transition-colors border-b border-slate-50 last:border-0"
-                                    onClick={() => { onChange(val); setIsOpen(false); }}
+                                    className="px-3 py-2.5 text-xs font-medium text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 cursor-pointer transition-colors border-b border-slate-50 last:border-0 flex items-center gap-2"
+                                    onClick={() => handleSelect(val)}
                                 >
-                                    {lbl}
+                                    {isMulti && (
+                                        <input type="checkbox" checked={isSelected} readOnly className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" />
+                                    )}
+                                    <span className="truncate">{lbl}</span>
                                 </div>
                             );
                         }) : (
@@ -129,7 +158,7 @@ export default function App() {
     const [authTrigger, setAuthTrigger] = useState(0);
 
     const [sheetName, setSheetName] = useState('');
-    const [sheetTabName, setSheetTabName] = useState('');
+    const [sheetTabName, setSheetTabName] = useState([]);
     const [dateReport, setDateReport] = useState('');
     const [customReportName, setCustomReportName] = useState('');
     const [qcNames, setQcNames] = useState('');
@@ -159,6 +188,10 @@ export default function App() {
     const [checkedJiraB, setCheckedJiraB] = useState({});
     const [checkedJiraUnverified, setCheckedJiraUnverified] = useState({});
     const [checkedJiraPending, setCheckedJiraPending] = useState({});
+    
+    const [jiraIssueTypesList, setJiraIssueTypesList] = useState([]);
+    const [checkedIssueTypesMap, setCheckedIssueTypesMap] = useState({});
+    const [isIssueTypeAccordionOpen, setIsIssueTypeAccordionOpen] = useState(true);
 
     const [jiraTagsList, setJiraTagsList] = useState([]);
     const [checkedJiraTagsMap, setCheckedJiraTagsMap] = useState({});
@@ -174,9 +207,9 @@ export default function App() {
     const [selectedBoardId, setSelectedBoardId] = useState('');
 
     const [epicOptions, setEpicOptions] = useState([]);
-    const [selectedEpicKey, setSelectedEpicKey] = useState('');
+    const [selectedEpicKey, setSelectedEpicKey] = useState([]);
     const [epicTasksList, setEpicTasksList] = useState([]);
-    const [selectedTaskKey, setSelectedTaskKey] = useState('');
+    const [selectedTaskKey, setSelectedTaskKey] = useState([]);
     const [isLoadingEpics, setIsLoadingEpics] = useState(false);
     const [isLoadingTasks, setIsLoadingTasks] = useState(false);
 
@@ -227,6 +260,8 @@ export default function App() {
         setCheckedJiraB({});
         setCheckedJiraUnverified({});
         setCheckedJiraPending({});
+        setJiraIssueTypesList([]);
+        setCheckedIssueTypesMap({});
         setJiraPrioritiesList([]);
         setCheckedPrioritiesMap({});
         setJiraTagsList([]);
@@ -302,6 +337,23 @@ export default function App() {
             setAvailableProjects([]);
         }
     }, [jiraCloudId, authTrigger]);
+    
+    const registerIssueTypes = (newTypes) => {
+        if (!newTypes || newTypes.length === 0) return;
+        const formatted = Array.from(new Set(newTypes.map(t => t.trim()).filter(Boolean)));
+        
+        setJiraIssueTypesList(prev => Array.from(new Set([...prev, ...formatted])).sort());
+
+        setCheckedIssueTypesMap(prev => {
+            const next = { ...prev };
+            formatted.forEach(t => {
+                if (next[t] === undefined) {
+                    next[t] = ['Bug', 'Bug/Defect', 'Improvement', 'Question', 'Sub-task'].includes(t);
+                }
+            });
+            return next;
+        });
+    };
 
     const registerPriorities = (newPriorities) => {
         if (!newPriorities || newPriorities.length === 0) return;
@@ -381,13 +433,14 @@ export default function App() {
         });
     };
 
-    const syncSubTaskMetadata = async (taskKey) => {
-        if (!taskKey || !jiraCloudId) return;
+    const syncSubTaskMetadata = async (taskKeys) => {
+        if (!taskKeys || taskKeys.length === 0 || !jiraCloudId) return;
         try {
+            const keysJql = taskKeys.map(k => `"${k}"`).join(',');
             const payload = {
-                jql: `parent = "${taskKey}"`,
+                jql: `parent in (${keysJql})`,
                 maxResults: 150,
-                fields: ["status", "summary", "priority"]
+                fields: ["status", "summary", "priority", "issuetype"]
             };
             const res = await fetchWithJiraAuth(`https://api.atlassian.com/ex/jira/${jiraCloudId}/rest/api/3/search/jql`, {
                 method: 'POST',
@@ -407,6 +460,14 @@ export default function App() {
                 const foundPriorities = items.map(iss => iss.fields?.priority?.name).filter(Boolean);
                 if (foundPriorities.length > 0) {
                     registerPriorities(foundPriorities);
+                }
+                
+                const foundTypes = new Set();
+                items.forEach(iss => {
+                    if (iss.fields?.issuetype?.name) foundTypes.add(iss.fields.issuetype.name);
+                });
+                if (foundTypes.size > 0) {
+                    registerIssueTypes(Array.from(foundTypes));
                 }
 
                 const foundTags = new Set();
@@ -455,16 +516,17 @@ export default function App() {
         }
     };
 
-    const handleEpicSelect = async (epicKey) => {
-        setSelectedEpicKey(epicKey);
-        setSelectedTaskKey('');
+    const handleEpicSelect = async (epicKeys) => {
+        setSelectedEpicKey(epicKeys);
+        setSelectedTaskKey([]);
         setEpicTasksList([]);
-        if (!epicKey || !jiraCloudId) return;
+        if (!epicKeys || epicKeys.length === 0 || !jiraCloudId) return;
 
         setIsLoadingTasks(true);
         showToast("Fetching Tasks for Epic...", 'loading');
         try {
-            const jql = `(parent = "${epicKey}" OR "Epic Link" = "${epicKey}") AND issuetype in (Task, Story, Standard) ORDER BY created DESC`;
+            const keysJql = epicKeys.map(k => `"${k}"`).join(',');
+            const jql = `(parent in (${keysJql}) OR "Epic Link" in (${keysJql})) AND issuetype in (Task, Story, Standard) ORDER BY created DESC`;
             const res = await fetchWithJiraAuth(`https://api.atlassian.com/ex/jira/${jiraCloudId}/rest/api/3/search/jql`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
@@ -480,13 +542,14 @@ export default function App() {
                 }));
                 setEpicTasksList(tasks);
 
-                const qcBugTask = tasks.find(t => t.summary.toLowerCase().includes('[qc] bugs list') || t.summary.toLowerCase().includes('bugs list'));
-                if (qcBugTask) {
-                    setSelectedTaskKey(qcBugTask.value);
-                    syncSubTaskMetadata(qcBugTask.value);
+                const qcBugTasks = tasks.filter(t => t.summary.toLowerCase().includes('[qc] bugs list') || t.summary.toLowerCase().includes('bugs list'));
+                if (qcBugTasks.length > 0) {
+                    const keys = qcBugTasks.map(t => t.value);
+                    setSelectedTaskKey(keys);
+                    syncSubTaskMetadata(keys);
                 } else if (tasks.length > 0) {
-                    setSelectedTaskKey(tasks[0].value);
-                    syncSubTaskMetadata(tasks[0].value);
+                    setSelectedTaskKey([tasks[0].value]);
+                    syncSubTaskMetadata([tasks[0].value]);
                 }
                 hideLoadingToast();
                 showToast("Loaded tasks for Epic successfully!", 'success');
@@ -505,7 +568,7 @@ export default function App() {
             try {
                 const state = JSON.parse(savedData);
                 if (state.sheetName) setSheetName(state.sheetName);
-                if (state.sheetTabName) setSheetTabName(state.sheetTabName);
+                if (state.sheetTabName) setSheetTabName(Array.isArray(state.sheetTabName) ? state.sheetTabName : [state.sheetTabName].filter(Boolean));
                 if (state.dateReport) setDateReport(state.dateReport);
                 if (state.customReportName) setCustomReportName(state.customReportName);
                 if (state.versionGame) setVersionGame(state.versionGame);
@@ -527,6 +590,10 @@ export default function App() {
                 if (state.linkPreprod) setLinkPreprod(state.linkPreprod);
                 if (Array.isArray(state.scopesList)) setScopesList(state.scopesList);
                 if (state.checkedScopes) setCheckedScopesMap(state.checkedScopes);
+                
+                if (Array.isArray(state.jiraIssueTypesList)) setJiraIssueTypesList(state.jiraIssueTypesList);
+                if (state.checkedIssueTypesMap) setCheckedIssueTypesMap(state.checkedIssueTypesMap);
+
                 if (Array.isArray(state.jiraStatusesList)) setJiraStatuses(Array.from(new Set(state.jiraStatusesList.map(cleanStatusName))));
                 if (Array.isArray(state.jiraTagsList)) setJiraTagsList(state.jiraTagsList);
                 if (state.checkedJiraTagsMap) setCheckedJiraTagsMap(state.checkedJiraTagsMap);
@@ -538,8 +605,8 @@ export default function App() {
                 if (Array.isArray(state.jiraParents)) setJiraParents(state.jiraParents);
                 if (state.selectedParent) setSelectedParent(state.selectedParent);
                 if (Array.isArray(state.availableSheetTabs)) setAvailableSheetTabs(state.availableSheetTabs);
-                if (state.selectedEpicKey) setSelectedEpicKey(state.selectedEpicKey);
-                if (state.selectedTaskKey) setSelectedTaskKey(state.selectedTaskKey);
+                if (state.selectedEpicKey) setSelectedEpicKey(Array.isArray(state.selectedEpicKey) ? state.selectedEpicKey : [state.selectedEpicKey].filter(Boolean));
+                if (state.selectedTaskKey) setSelectedTaskKey(Array.isArray(state.selectedTaskKey) ? state.selectedTaskKey : [state.selectedTaskKey].filter(Boolean));
                 if (state.selectedBoardId) setSelectedBoardId(state.selectedBoardId);
             } catch (e) { }
         } else {
@@ -604,7 +671,9 @@ export default function App() {
         const config = {
             sheetName, sheetTabName, dateReport, customReportName, versionGame, dateGame, versionApp, dateApp,
             qcNames, testingStatus, chkCustomNote, customNotes: customNotesData, chkCustomIframe, customIframesData, chkWebapp, chkApptek, chkPreprod, linkShared, linkPreprod,
-            scopesList, checkedScopes: checkedScopesMap, jiraStatusesList: jiraStatuses, checkedJiraStatuses_B: checkedJiraB,
+            scopesList, checkedScopes: checkedScopesMap, 
+            jiraIssueTypesList, checkedIssueTypesMap,
+            jiraStatusesList: jiraStatuses, checkedJiraStatuses_B: checkedJiraB,
             checkedJiraStatuses_Unverified: checkedJiraUnverified, checkedJiraStatuses_Pending: checkedJiraPending,
             jiraParents, selectedParent,
             jiraTagsList, checkedJiraTagsMap, jiraPrioritiesList, checkedPrioritiesMap, availableSheetTabs,
@@ -615,7 +684,7 @@ export default function App() {
     }, [
         sheetName, sheetTabName, dateReport, customReportName, versionGame, dateGame, versionApp, dateApp,
         qcNames, testingStatus, chkCustomNote, customNotesData, chkCustomIframe, customIframesData, chkWebapp, chkApptek, chkPreprod, linkShared, linkPreprod,
-        scopesList, checkedScopesMap, jiraStatuses, checkedJiraB, checkedJiraUnverified, checkedJiraPending,
+        scopesList, checkedScopesMap, jiraIssueTypesList, checkedIssueTypesMap, jiraStatuses, checkedJiraB, checkedJiraUnverified, checkedJiraPending,
         jiraParents, selectedParent,
         jiraTagsList, checkedJiraTagsMap, jiraPrioritiesList, checkedPrioritiesMap, availableSheetTabs,
         selectedEpicKey, selectedTaskKey, selectedBoardId
@@ -690,8 +759,8 @@ export default function App() {
             const tabs = data.sheets.map(s => s.properties.title);
             setAvailableSheetTabs(tabs);
             
-            if (tabs.length > 0 && !sheetTabName) {
-                setSheetTabName(tabs[0]);
+            if (tabs.length > 0 && sheetTabName.length === 0) {
+                setSheetTabName([tabs[0]]);
             }
             
             hideLoadingToast();
@@ -736,6 +805,7 @@ export default function App() {
             const keys = projectKeysStr.split(',').map(k => k.trim()).filter(Boolean);
             const statusSet = new Set();
             const parentsMap = new Map();
+            const issueTypeSet = new Set();
 
             try {
                 const prRes = await fetchWithJiraAuth(`https://api.atlassian.com/ex/jira/${jiraCloudId}/rest/api/2/priority`, { headers: { 'Accept': 'application/json' } });
@@ -754,6 +824,9 @@ export default function App() {
                     if (res.ok) {
                         const data = await res.json();
                         data.forEach(issueType => {
+                            if (issueType.name) {
+                                issueTypeSet.add(issueType.name);
+                            }
                             issueType.statuses?.forEach(status => {
                                 if (status && status.name) {
                                     statusSet.add(cleanStatusName(status.name));
@@ -795,7 +868,13 @@ export default function App() {
                 let jHasMore = true;
                 let currentToken = null;
                 const keysStr = keys.map(k => `"${k}"`).join(',');
-                const tagJql = `project in (${keysStr}) AND issuetype in (Bug, "Bug/Defect", Improvement, Question) ORDER BY created DESC`;
+                
+                const activeTypes = Object.keys(checkedIssueTypesMap).filter(k => checkedIssueTypesMap[k]);
+                let typeClause = activeTypes.length > 0 
+                    ? `issuetype in (${activeTypes.map(t => `"${t}"`).join(',')})`
+                    : `issuetype in (Bug, "Bug/Defect", Improvement, Question)`;
+                
+                const tagJql = `project in (${keysStr}) AND ${typeClause} ORDER BY created DESC`;
                 
                 while (jHasMore) {
                     const payload = { jql: tagJql, maxResults: 100, fields: ["summary"] };
@@ -834,6 +913,10 @@ export default function App() {
                 console.error("Error while loading tags:", e);
             }
 
+            if (issueTypeSet.size > 0) {
+                registerIssueTypes(Array.from(issueTypeSet));
+            }
+
             if (statusSet.size > 0) {
                 registerStatusesToFilters(Array.from(statusSet));
             }
@@ -853,6 +936,12 @@ export default function App() {
     const handleLoadStatuses = () => {
         fetchJiraStatuses(sheetName.trim(), false);
         syncEpicsForProject(sheetName.trim());
+    };
+
+    const toggleAllIssueTypes = (selectAll) => {
+        const newMap = {};
+        jiraIssueTypesList.forEach(t => { newMap[t] = selectAll; });
+        setCheckedIssueTypesMap(newMap);
     };
 
     const toggleAllJiraCategory = (category, selectAll) => {
@@ -957,7 +1046,7 @@ export default function App() {
         const qcNamesInput = qcNames.trim();
         const versionGameInput = versionGame.trim();
         const versionAppInput = versionApp.trim();
-        const sheetTabNameInput = sheetTabName.trim();
+        const sheetTabNameInput = sheetTabName;
         const isAppRequired = chkWebapp || chkApptek;
         const selectedScopes = scopesList.filter(scope => checkedScopesMap[scope] === undefined ? false : checkedScopesMap[scope]);
         const sharedInputValue = linkShared.trim();
@@ -970,13 +1059,13 @@ export default function App() {
         if (projectKeysInput.length === 0) errors.push("Project Key");
         if (!boardIdInput) errors.push("Board ID");
         if (!customReportNameInput) errors.push("Report Name");
-        if (!sheetTabNameInput) errors.push("Sheet Tab Name");
+        if (!sheetTabNameInput || sheetTabNameInput.length === 0) errors.push("Sheet Tab Name");
         if (!qcNamesInput) errors.push("QC Team");
         if (!versionGameInput) errors.push("Game Version");
         if (isAppRequired && !versionAppInput) errors.push("App Version");
         if (selectedScopes.length === 0) errors.push("Scope of Testing (at least 1)");
 
-        if (activeTabMode === 'hierarchy' && !selectedTaskKey) {
+        if (activeTabMode === 'hierarchy' && (!selectedTaskKey || selectedTaskKey.length === 0)) {
             errors.push("Target Task / [QC] Bugs List");
         }
 	
@@ -998,7 +1087,6 @@ export default function App() {
 
         try {
             let finalGameId = projectKeysInput[0];
-            const actualSheetTabName = sheetTabNameInput;
             const urlInput = "https://docs.google.com/spreadsheets/d/1XF2bOLyXoVM3Py6qYBidSe1tcfOqMuuwg14wnLVf1lA/edit?gid=45247494#gid=45247494";
 
             setOutputReport('');
@@ -1017,48 +1105,128 @@ export default function App() {
             let finalReport = '';
             let autoTestcaseLink = '';
             let rawSheetItems = [];
+            let doneHeaderPercent = '0%';
+            let inProgressHeaderPercent = '0%';
+            let remainingHeaderPercent = '0%';
+            let sheetValidationErrors = [];
 
             try {
                 const spreadsheetIdMatch = urlInput.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
                 if (!spreadsheetIdMatch) throw new Error("Invalid spreadsheet URL.");
                 const spreadsheetId = spreadsheetIdMatch[1];
-                const sheetApiUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/'${encodeURIComponent(actualSheetTabName)}'`;
-                let sheetRes = await fetch(sheetApiUrl, { headers: { 'Authorization': `Bearer ${token}` } });
-                if (sheetRes.status === 401) {
-                    token = await getGoogleTokenAsync(true);
-                    sheetRes = await fetch(sheetApiUrl, { headers: { 'Authorization': `Bearer ${token}` } });
-                }
-                if (!sheetRes.ok) {
-                    if (sheetRes.status === 403) throw new Error("Permission denied. Check sharing settings.");
-                    if (sheetRes.status === 400) throw new Error(`Tab '${actualSheetTabName}' not found.`);
-                    throw new Error(`Google Sheets API Error: ${sheetRes.statusText}`);
-                }
-                const sheetData = await sheetRes.json();
-                const rows = sheetData.values || [];
-                const a1ApiUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?ranges='${encodeURIComponent(actualSheetTabName)}'!A1&fields=sheets.data.rowData.values(hyperlink,formattedValue,textFormatRuns,chipRuns)`;
-                const a1Res = await fetch(a1ApiUrl, { headers: { 'Authorization': `Bearer ${token}` } });
-                if (a1Res.ok) {
-                    const a1Data = await a1Res.json();
-                    try {
-                        const cell = a1Data.sheets[0].data[0].rowData[0].values[0];
-                        let extractedLink = '';
-                        if (cell.hyperlink) extractedLink = cell.hyperlink;
-                        else if (cell.chipRuns && cell.chipRuns.length > 0) {
-                            for (const run of cell.chipRuns) {
-                                if (run.chip && run.chip.richLinkProperties && run.chip.richLinkProperties.uri) { extractedLink = run.chip.richLinkProperties.uri; break; }
+                
+                for (const tabName of sheetTabNameInput) {
+                    const sheetApiUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/'${encodeURIComponent(tabName)}'`;
+                    let sheetRes = await fetch(sheetApiUrl, { headers: { 'Authorization': `Bearer ${token}` } });
+                    if (sheetRes.status === 401) {
+                        token = await getGoogleTokenAsync(true);
+                        sheetRes = await fetch(sheetApiUrl, { headers: { 'Authorization': `Bearer ${token}` } });
+                    }
+                    if (!sheetRes.ok) {
+                        if (sheetRes.status === 403) throw new Error("Permission denied. Check sharing settings.");
+                        if (sheetRes.status === 400) throw new Error(`Tab '${tabName}' not found.`);
+                        throw new Error(`Google Sheets API Error: ${sheetRes.statusText}`);
+                    }
+                    const sheetData = await sheetRes.json();
+                    const rows = sheetData.values || [];
+                    
+                    if (!autoTestcaseLink) {
+                        const a1ApiUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?ranges='${encodeURIComponent(tabName)}'!A1&fields=sheets.data.rowData.values(hyperlink,formattedValue,textFormatRuns,chipRuns)`;
+                        const a1Res = await fetch(a1ApiUrl, { headers: { 'Authorization': `Bearer ${token}` } });
+                        if (a1Res.ok) {
+                            const a1Data = await a1Res.json();
+                            try {
+                                const cell = a1Data.sheets[0].data[0].rowData[0].values[0];
+                                let extractedLink = '';
+                                if (cell.hyperlink) extractedLink = cell.hyperlink;
+                                else if (cell.chipRuns && cell.chipRuns.length > 0) {
+                                    for (const run of cell.chipRuns) {
+                                        if (run.chip && run.chip.richLinkProperties && run.chip.richLinkProperties.uri) { extractedLink = run.chip.richLinkProperties.uri; break; }
+                                    }
+                                } else if (cell.textFormatRuns && cell.textFormatRuns.length > 0) {
+                                    for (const run of cell.textFormatRuns) {
+                                        if (run.format && run.format.link && run.format.link.uri) { extractedLink = run.format.link.uri; break; }
+                                    }
+                                }
+                                if (!extractedLink) extractedLink = cell.formattedValue || '';
+                                autoTestcaseLink = extractedLink.trim();
+                            } catch (e) {
+                                autoTestcaseLink = (rows.length > 0 && rows[0].length > 0) ? rows[0][0].toString().trim() : '';
                             }
-                        } else if (cell.textFormatRuns && cell.textFormatRuns.length > 0) {
-                            for (const run of cell.textFormatRuns) {
-                                if (run.format && run.format.link && run.format.link.uri) { extractedLink = run.format.link.uri; break; }
+                        } else {
+                            autoTestcaseLink = (rows.length > 0 && rows[0].length > 0) ? rows[0][0].toString().trim() : '';
+                        }
+                    }
+
+                    if (rows.length > 1) {
+                        for (let i = 1; i < rows.length; i++) {
+                            const row = rows[i];
+                            for (let j = 0; j < row.length; j++) {
+                                const cellText = row[j] ? row[j].toString().trim().toLowerCase() : '';
+                                if (cellText === '% done') {
+                                    let nextVal = row[j + 1] ? row[j + 1].toString().trim() : '';
+                                    if (nextVal && !nextVal.includes('%') && !isNaN(nextVal)) nextVal = ((parseFloat(nextVal) * 100).toFixed(2) + '%').replace('.00%', '%');
+                                    else if (nextVal) nextVal = nextVal.replace('.00%', '%');
+                                    doneHeaderPercent = nextVal || '0%';
+                                } else if (cellText === '% in progress') {
+                                    let nextVal = row[j + 1] ? row[j + 1].toString().trim() : '';
+                                    if (nextVal && !nextVal.includes('%') && !isNaN(nextVal)) nextVal = ((parseFloat(nextVal) * 100).toFixed(2) + '%').replace('.00%', '%');
+                                    else if (nextVal) nextVal = nextVal.replace('.00%', '%');
+                                    inProgressHeaderPercent = nextVal || '0%';
+                                } else if (cellText === '% remaining') {
+                                    let nextVal = row[j + 1] ? row[j + 1].toString().trim() : '';
+                                    if (nextVal && !nextVal.includes('%') && !isNaN(nextVal)) nextVal = ((parseFloat(nextVal) * 100).toFixed(2) + '%').replace('.00%', '%');
+                                    else if (nextVal) nextVal = nextVal.replace('.00%', '%');
+                                    remainingHeaderPercent = nextVal || '0%';
+                                }
+                            }
+
+                            const colA = row[0] ? row[0].toString().trim() : '';
+                            const colB = row[1] ? row[1].toString().trim() : '';
+                            let colE = row[4] ? row[4].toString().trim() : '';
+                            const colG = row[6] ? row[6].toString().trim() : '';
+                            const colH = row[7] ? row[7].toString().trim() : '';
+
+                            if (colA && colB && colG) {
+                                let statusKey = colG.toUpperCase();
+                                if (statusKey === 'REMAINING') statusKey = 'REMAINS';
+
+                                let isStatusFailed = colG.toLowerCase().includes('fail');
+                                if (isStatusFailed) {
+                                    statusKey = 'IN PROGRESS'; 
+                                }
+
+                                if (colE && !colE.includes('%') && !isNaN(colE)) colE = ((parseFloat(colE) * 100).toFixed(2) + '%').replace('.00%', '%');
+                                else if (!colE) colE = '0%';
+                                else colE = colE.replace('.00%', '%');
+
+                                if (statusKey === 'REMAINS' && colE !== '100%') {
+                                    sheetValidationErrors.push(`- [${colA}]: Is in REMAINS but % Remaining = ${colE} (Must be 100%)`);
+                                }
+                                if (statusKey === 'DONE' && colE !== '0%') {
+                                    sheetValidationErrors.push(`- [${colA}]: Is in DONE but % Remaining = ${colE} (Must be 0%)`);
+                                }
+                                
+                                let displayRemaining = colE;
+                                
+                                if ((statusKey === 'IN PROGRESS' && colH.toLowerCase().includes('failed')) || isStatusFailed) {
+                                    displayRemaining = 'Failed';
+                                }
+                                if (statusKey === 'DONE' && colH.toLowerCase().includes('warning')) displayRemaining = 'Passed with warning';
+                                
+                                let disp = displayRemaining;
+                                if (statusKey === 'DONE' && disp !== 'Passed with warning') disp = '';
+                                if (statusKey === 'REMAINS') disp = '';
+
+                                rawSheetItems.push({
+                                    name: colA,
+                                    statusKey: statusKey,
+                                    displayValue: disp, 
+                                    rowOriginalIndex: rawSheetItems.length
+                                });
                             }
                         }
-                        if (!extractedLink) extractedLink = cell.formattedValue || '';
-                        autoTestcaseLink = extractedLink.trim();
-                    } catch (e) {
-                        autoTestcaseLink = (rows.length > 0 && rows[0].length > 0) ? rows[0][0].toString().trim() : '';
                     }
-                } else {
-                    autoTestcaseLink = (rows.length > 0 && rows[0].length > 0) ? rows[0][0].toString().trim() : '';
                 }
 
                 if (autoTestcaseLink && (autoTestcaseLink.includes("drive.google.com") || autoTestcaseLink.includes("docs.google.com"))) {
@@ -1072,80 +1240,7 @@ export default function App() {
                     if (driveCheck.id) finalGameId = driveCheck.id;
                 }
 
-                let doneHeaderPercent = '0%';
-                let inProgressHeaderPercent = '0%';
-                let remainingHeaderPercent = '0%';
-                let sheetValidationErrors = [];
-
-                if (rows.length > 1) {
-                    for (let i = 1; i < rows.length; i++) {
-                        const row = rows[i];
-                        for (let j = 0; j < row.length; j++) {
-                            const cellText = row[j] ? row[j].toString().trim().toLowerCase() : '';
-                            if (cellText === '% done') {
-                                let nextVal = row[j + 1] ? row[j + 1].toString().trim() : '';
-                                if (nextVal && !nextVal.includes('%') && !isNaN(nextVal)) nextVal = ((parseFloat(nextVal) * 100).toFixed(2) + '%').replace('.00%', '%');
-                                else if (nextVal) nextVal = nextVal.replace('.00%', '%');
-                                doneHeaderPercent = nextVal || '0%';
-                            } else if (cellText === '% in progress') {
-                                let nextVal = row[j + 1] ? row[j + 1].toString().trim() : '';
-                                if (nextVal && !nextVal.includes('%') && !isNaN(nextVal)) nextVal = ((parseFloat(nextVal) * 100).toFixed(2) + '%').replace('.00%', '%');
-                                else if (nextVal) nextVal = nextVal.replace('.00%', '%');
-                                inProgressHeaderPercent = nextVal || '0%';
-                            } else if (cellText === '% remaining') {
-                                let nextVal = row[j + 1] ? row[j + 1].toString().trim() : '';
-                                if (nextVal && !nextVal.includes('%') && !isNaN(nextVal)) nextVal = ((parseFloat(nextVal) * 100).toFixed(2) + '%').replace('.00%', '%');
-                                else if (nextVal) nextVal = nextVal.replace('.00%', '%');
-                                remainingHeaderPercent = nextVal || '0%';
-                            }
-                        }
-
-                        const colA = row[0] ? row[0].toString().trim() : '';
-                        const colB = row[1] ? row[1].toString().trim() : '';
-                        let colE = row[4] ? row[4].toString().trim() : '';
-                        const colG = row[6] ? row[6].toString().trim() : '';
-                        const colH = row[7] ? row[7].toString().trim() : '';
-
-                        if (colA && colB && colG) {
-                            let statusKey = colG.toUpperCase();
-                            if (statusKey === 'REMAINING') statusKey = 'REMAINS';
-
-                            let isStatusFailed = colG.toLowerCase().includes('fail');
-                            if (isStatusFailed) {
-                                statusKey = 'IN PROGRESS'; 
-                            }
-
-                            if (colE && !colE.includes('%') && !isNaN(colE)) colE = ((parseFloat(colE) * 100).toFixed(2) + '%').replace('.00%', '%');
-                            else if (!colE) colE = '0%';
-                            else colE = colE.replace('.00%', '%');
-
-                            if (statusKey === 'REMAINS' && colE !== '100%') {
-                                sheetValidationErrors.push(`- [${colA}]: Is in REMAINS but % Remaining = ${colE} (Must be 100%)`);
-                            }
-                            if (statusKey === 'DONE' && colE !== '0%') {
-                                sheetValidationErrors.push(`- [${colA}]: Is in DONE but % Remaining = ${colE} (Must be 0%)`);
-                            }
-                            
-                            let displayRemaining = colE;
-                            
-                            if ((statusKey === 'IN PROGRESS' && colH.toLowerCase().includes('failed')) || isStatusFailed) {
-                                displayRemaining = 'Failed';
-                            }
-                            if (statusKey === 'DONE' && colH.toLowerCase().includes('warning')) displayRemaining = 'Passed with warning';
-                            
-                            let disp = displayRemaining;
-                            if (statusKey === 'DONE' && disp !== 'Passed with warning') disp = '';
-                            if (statusKey === 'REMAINS') disp = '';
-
-                            rawSheetItems.push({
-                                name: colA,
-                                statusKey: statusKey,
-                                displayValue: disp, 
-                                rowOriginalIndex: i
-                            });
-                        }
-                    }
-
+                if (rawSheetItems.length > 0) {
                     let normalizedItems = rawSheetItems.map(item => {
                         let lower = item.name.toLowerCase();
                         let finalName = item.name;
@@ -1373,17 +1468,23 @@ export default function App() {
                     }
                 } catch (e) { }
 
+                const activeTypes = jiraIssueTypesList.filter(t => checkedIssueTypesMap[t]);
+                let typeClause = activeTypes.length > 0 
+                    ? `issuetype in (${activeTypes.map(t => `"${t}"`).join(',')})`
+                    : `issuetype in (Bug, "Bug/Defect", Improvement, Question, Sub-task)`;
+                
                 let finalJql = "";
 
                 if (activeTabMode === 'hierarchy') {
-                    finalJql = `parent = "${selectedTaskKey}" AND issuetype in (Bug, "Bug/Defect", Improvement, Question, Sub-task) ORDER BY created DESC`;
+                    const tasksJql = selectedTaskKey.map(k => `"${k}"`).join(',');
+                    finalJql = `parent in (${tasksJql}) AND ${typeClause} ORDER BY created DESC`;
 
-                    if (selectedEpicKey) {
-                        const ep = epicOptions.find(e => e.value === selectedEpicKey);
+                    if (selectedEpicKey.length > 0) {
+                        const ep = epicOptions.find(e => e.value === selectedEpicKey[0]);
                         if (ep) targetName = ep.label.replace(/\s*\([^)]*\)$/, '');
                     }
                 } else {
-                    let jqlString = `issuetype in (Bug, "Bug/Defect", Improvement, Question)`;
+                    let jqlString = `${typeClause}`;
                     if (selectedParent !== 'All') jqlString += ` AND (parent = "${selectedParent}" OR "Epic Link" = "${selectedParent}")`;
                     jqlString += ` ORDER BY created DESC`;
                     finalJql = `project in (${projectKeysInput.map(k => `"${k}"`).join(',')}) AND ${jqlString}`;
@@ -1438,24 +1539,26 @@ export default function App() {
                     ? `${baseUrl}${pathPrefix}/${realKey}/boards/${finalBoardId}`
                     : `${baseUrl}${pathPrefix}/${realKey}/boards`;
 
-                const typeContainers = { 'BUG': {}, 'IMPROVEMENT': {}, 'QUESTION': {} };
+                const typeContainers = {};
                 let totalBoardTickets = 0;
                 let buildStatusCount = 0;
-                let bugCount = 0, impCount = 0, queCount = 0;
-                let bugPriorityMap = {};
+                let issueTypeCounts = {};
+                let issueTypePriorityMap = {};
                 
                 jiraIssues.forEach(issue => {
                     let statusName = cleanStatusName(issue.fields.status?.name);
                     if (checkedJiraUnverified[statusName]) { unverifiedCount++; unverifiedStatusesFound.add(statusName); }
                     if (checkedJiraPending[statusName]) { pendingCount++; pendingStatusesFound.add(statusName); }
                     
-                    let issueTypeName = (issue.fields.issuetype && issue.fields.issuetype.name) ? issue.fields.issuetype.name.toUpperCase().trim() : '';
-                    if (issueTypeName === 'BUG/DEFECT' || issueTypeName === 'SUB-TASK') {
-                        issueTypeName = 'BUG';
+                    let issueTypeNameRaw = (issue.fields.issuetype && issue.fields.issuetype.name) ? issue.fields.issuetype.name.trim() : 'Unknown';
+                    let issueTypeName = issueTypeNameRaw.toUpperCase();
+
+                    if (jiraIssueTypesList.length > 0 && checkedIssueTypesMap[issueTypeNameRaw] === false) {
+                        return;
                     }
 
                     totalBoardTickets++;
-                    if (typeContainers[issueTypeName] === undefined) return;
+                    
                     let isValidStatus = false;
                     if (jiraStatuses.length > 0) {
                         if (checkedJiraB[statusName]) isValidStatus = true;
@@ -1481,32 +1584,54 @@ export default function App() {
                         }
 
                         buildStatusCount++;
-                        if (issueTypeName === 'BUG') {
-                            bugCount++;
-                            if (!bugPriorityMap[pName]) bugPriorityMap[pName] = 0;
-                            bugPriorityMap[pName]++;
-                        } else if (issueTypeName === 'IMPROVEMENT') impCount++;
-                        else if (issueTypeName === 'QUESTION') queCount++;
+
+                        let isBugLike = issueTypeName.includes('BUG') || issueTypeName.includes('DEFECT') || issueTypeName === 'SUB-TASK';
+                        let groupKey = isBugLike ? 'BUG' : issueTypeName;
                         
-                        if (!typeContainers[issueTypeName][tag]) typeContainers[issueTypeName][tag] = {};
-                        if (!typeContainers[issueTypeName][tag][pName]) typeContainers[issueTypeName][tag][pName] = [];
-                        typeContainers[issueTypeName][tag][pName].push({ key: issue.key, summary: summary.replace(/\[.*?\]/g, '').trim() });
+                        if (!issueTypeCounts[groupKey]) issueTypeCounts[groupKey] = 0;
+                        issueTypeCounts[groupKey]++;
+
+                        if (!issueTypePriorityMap[groupKey]) issueTypePriorityMap[groupKey] = {};
+                        if (!issueTypePriorityMap[groupKey][pName]) issueTypePriorityMap[groupKey][pName] = 0;
+                        issueTypePriorityMap[groupKey][pName]++;
+
+                        if (!typeContainers[groupKey]) typeContainers[groupKey] = {};
+                        if (!typeContainers[groupKey][tag]) typeContainers[groupKey][tag] = {};
+                        if (!typeContainers[groupKey][tag][pName]) typeContainers[groupKey][tag][pName] = [];
+                        typeContainers[groupKey][tag][pName].push({ key: issue.key, summary: summary.replace(/\[.*?\]/g, '').trim() });
                     }
                 });
                 
-                const effectivePrioritiesOrder = jiraPrioritiesList.length > 0 ? jiraPrioritiesList : Object.keys(bugPriorityMap);
+                const collectedTags = new Set();
+                ['BUG', 'IMPROVEMENT', 'QUESTION'].forEach(typeKey => {
+                    if (typeContainers[typeKey]) {
+                        const tags = Object.keys(typeContainers[typeKey]);
+                        tags.forEach(tag => collectedTags.add(tag));
+                    }
+                });
+                if (collectedTags.size > 0) {
+                    setJiraTagsList(Array.from(collectedTags).sort());
+                }
+
+                const effectivePrioritiesOrder = jiraPrioritiesList.length > 0 ? jiraPrioritiesList : Object.keys(issueTypePriorityMap['BUG'] || {});
 
                 let buildStatusParts = [];
-                if (bugCount > 0) {
-                    effectivePrioritiesOrder.forEach(pr => { 
-                        if (bugPriorityMap[pr]) buildStatusParts.push(pr + ": " + bugPriorityMap[pr]); 
-                    });
-                    for (const pr in bugPriorityMap) { 
-                        if (!effectivePrioritiesOrder.includes(pr)) buildStatusParts.push(pr + ": " + bugPriorityMap[pr]); 
+                const sortedTypes = Object.keys(issueTypeCounts).sort();
+                
+                sortedTypes.forEach(tKey => {
+                    const displayName = tKey.charAt(0) + tKey.slice(1).toLowerCase();
+                    if (tKey === 'BUG') {
+                        const pMap = issueTypePriorityMap[tKey];
+                        effectivePrioritiesOrder.forEach(pr => {
+                            if (pMap[pr]) buildStatusParts.push(`${pr}: ${pMap[pr]}`);
+                        });
+                        for (const pr in pMap) {
+                            if (!effectivePrioritiesOrder.includes(pr)) buildStatusParts.push(`${pr}: ${pMap[pr]}`);
+                        }
+                    } else {
+                        buildStatusParts.push(`${displayName}: ${issueTypeCounts[tKey]}`);
                     }
-                }
-                if (impCount > 0) buildStatusParts.push(`Improvement: ${impCount}`);
-                if (queCount > 0) buildStatusParts.push(`Question: ${queCount}`);
+                });
                 
                 let buildNoun = buildStatusCount === 1 ? 'ticket' : 'tickets';
                 let totalNoun = totalBoardTickets === 1 ? 'ticket' : 'tickets';
@@ -1523,7 +1648,9 @@ export default function App() {
                 };
                 let jiraBody = '';
                 let sectionIndex = 1;
-                ['BUG', 'IMPROVEMENT', 'QUESTION'].forEach(typeKey => {
+                const typeKeys = Object.keys(typeContainers).sort();
+                
+                typeKeys.forEach(typeKey => {
                     if (typeKey === 'BUG') {
                         const tags = Object.keys(typeContainers['BUG']);
                         if (tags.length > 0) {
@@ -1592,6 +1719,7 @@ export default function App() {
                         }
                     }
                 });
+                
                 if (jiraBody.trim().length > 0) jiraReportSegment = "B. [TICKETS]\n" + jiraBody;
             } catch (error) {
                 hideLoadingToast();
@@ -1743,7 +1871,7 @@ export default function App() {
 
     return (
         <div className="min-h-screen bg-slate-100 text-slate-800 font-sans p-6 pb-36">
-            <header className="w-full mb-6 flex justify-between items-center">
+            <header className="w-full mb-6 flex flex-wrap justify-between items-center gap-4">
                 <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-2xl bg-indigo-50 border border-indigo-200 flex items-center justify-center shadow-sm">
                         <svg className="w-6 h-6 text-indigo-600" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
@@ -1754,28 +1882,31 @@ export default function App() {
                     </div>
                 </div>
 
-                <div className="bg-slate-200/80 p-1 rounded-2xl flex items-center gap-1 shadow-inner border border-slate-300">
+                <div className="bg-slate-200/80 p-1 rounded-xl flex items-center shadow-inner border border-slate-300 w-fit">
                     <button
                         type="button"
                         onClick={() => handleSwitchMode('classic')}
-                        className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${activeTabMode === 'classic' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
+                        className={`relative px-4 py-2 rounded-lg text-xs font-bold transition-all duration-200 flex items-center gap-2 ${activeTabMode === 'classic' ? 'bg-white text-indigo-700 shadow-md ring-1 ring-slate-200/50' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-300/50'}`}
                     >
-                        Standard Flow (Old Board)
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h7" /></svg>
+                        Standard Flow
                     </button>
                     <button
                         type="button"
                         onClick={() => handleSwitchMode('hierarchy')}
-                        className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${activeTabMode === 'hierarchy' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
+                        className={`relative px-4 py-2 rounded-lg text-xs font-bold transition-all duration-200 flex items-center gap-2 ${activeTabMode === 'hierarchy' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-300/50'}`}
                     >
-                        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                        Hierarchical Flow (New Board)
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" /></svg>
+                        Tree Flow
                     </button>
                 </div>
 
-                <div className="flex items-center gap-4">
+                <div className="flex items-center gap-3">
                     {workspaces.length > 0 && jiraToken && (
-                        <div className="flex items-center gap-2">
-                            <label className="text-xs font-semibold text-slate-600">Workspace:</label>
+                        <div className="relative flex items-center group">
+                            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                <svg className="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" /></svg>
+                            </div>
                             <select 
                                 value={jiraCloudId || ''} 
                                 onChange={e => {
@@ -1785,15 +1916,16 @@ export default function App() {
                                     setAvailableProjects([]);
                                     setEpicOptions([]);
                                     setEpicTasksList([]);
-                                    setSelectedEpicKey('');
-                                    setSelectedTaskKey('');
+                                    setSelectedEpicKey([]);
+                                    setSelectedTaskKey([]);
                                     setJiraStatuses([]);
                                     setJiraPrioritiesList([]);
                                     setJiraTagsList([]);
                                     setAuthTrigger(prev => prev + 1);
                                     showToast("Switched Jira Workspace", 'success');
                                 }}
-                                className="h-10 px-3 bg-white border border-slate-300 rounded-xl text-xs font-medium text-slate-800 focus:outline-none focus:border-indigo-600 shadow-sm"
+                                className="h-10 pl-9 pr-10 bg-white hover:bg-indigo-50/50 border border-slate-200 hover:border-indigo-300 rounded-xl text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 cursor-pointer appearance-none shadow-sm transition-all"
+                                style={{ WebkitAppearance: 'none', MozAppearance: 'none' }}
                             >
                                 {workspaces.map(ws => (
                                     <option key={ws.id} value={ws.id}>
@@ -1801,16 +1933,19 @@ export default function App() {
                                     </option>
                                 ))}
                             </select>
+                            <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+                                <svg className="w-4 h-4 text-slate-400 group-hover:text-indigo-500 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 9l4-4 4 4m0 6l-4 4-4-4" /></svg>
+                            </div>
                         </div>
                     )}
 
-                    <div className="flex items-center gap-3 bg-white/90 border border-slate-200 px-4 py-2 rounded-2xl backdrop-blur-md shadow-sm">
+                    <div className="flex items-center gap-3 bg-white/90 border border-slate-200 px-3 py-1.5 rounded-xl backdrop-blur-md shadow-sm">
                         <span className={`w-2.5 h-2.5 rounded-full ${jiraToken && jiraCloudId ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)]' : 'bg-slate-400'}`}></span>
-                        <span className="text-xs font-semibold text-slate-700">
+                        <span className="text-xs font-semibold text-slate-700 hidden sm:inline-block">
                             {jiraToken && jiraCloudId ? "Jira Connected" : "Jira Disconnected"}
                         </span>
                         {jiraToken && jiraCloudId ? (
-                            <button onClick={handleJiraDisconnect} className="text-xs px-3 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl border border-slate-300 transition-all">
+                            <button onClick={handleJiraDisconnect} className="text-[11px] px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-lg border border-slate-300 transition-all">
                                 Disconnect
                             </button>
                         ) : (
@@ -1898,6 +2033,7 @@ export default function App() {
                                     {isLoadingEpics && <span className="text-[10px] text-indigo-600 animate-pulse font-medium">Syncing Epics...</span>}
                                 </div>
                                 <SearchableDropdown
+                                    isMulti={true}
                                     options={epicOptions}
                                     value={selectedEpicKey}
                                     onChange={handleEpicSelect}
@@ -1911,6 +2047,7 @@ export default function App() {
                                     {isLoadingTasks && <span className="text-[10px] text-indigo-600 animate-pulse font-medium">Loading Tasks...</span>}
                                 </div>
                                 <SearchableDropdown
+                                    isMulti={true}
                                     options={epicTasksList}
                                     value={selectedTaskKey}
                                     onChange={val => {
@@ -1940,6 +2077,7 @@ export default function App() {
                             <div className="flex gap-2">
                                 <div className="flex-1">
                                     <SearchableDropdown 
+                                        isMulti={true}
                                         ref={sheetTabNameRef}
                                         options={availableSheetTabs.map(t => ({ value: t, label: t }))} 
                                         value={sheetTabName} 
@@ -1974,7 +2112,7 @@ export default function App() {
                                     setCustomReportName(e.target.value);
                                     setFormErrors(prev => prev.filter(err => err !== "Report Name"));
                                 }} 
-                                placeholder="Required: Enter Report Name" 
+                                placeholder="Id - Game Name" 
                                 className={`w-full h-10 px-3 bg-slate-50 border rounded-xl text-xs font-medium text-slate-800 focus:outline-none transition-colors ${formErrors.includes("Report Name") ? 'border-rose-500 ring-1 ring-rose-500' : 'border-slate-300 focus:border-indigo-600'}`} 
                             />
                         </div>
@@ -2227,6 +2365,39 @@ export default function App() {
                             );
                         })}
                     </div>
+                    
+                    {jiraIssueTypesList.length > 0 && (
+                        <div className="bg-slate-50 border border-slate-200 rounded-xl overflow-hidden mt-1">
+                            <button type="button" onClick={() => setIsIssueTypeAccordionOpen(!isIssueTypeAccordionOpen)} className="w-full px-4 py-3 flex items-center justify-between text-xs font-bold text-slate-700 hover:bg-slate-100 transition-all">
+                                <span>Filter Types / Worktypes</span>
+                                <span className="text-slate-400">{isIssueTypeAccordionOpen ? '▲' : '▼'}</span>
+                            </button>
+
+                            {isIssueTypeAccordionOpen && (
+                                <div className="p-3 border-t border-slate-200 bg-slate-50">
+                                    <div className="flex justify-between items-center mb-2">
+                                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-tight">Select Types to Include</span>
+                                        <div className="flex gap-1 text-[9px]">
+                                            <button type="button" onClick={() => toggleAllIssueTypes(true)} className="text-indigo-600 hover:underline font-bold">All</button>
+                                            <span className="text-slate-300">|</span>
+                                            <button type="button" onClick={() => toggleAllIssueTypes(false)} className="text-slate-500 hover:underline">None</button>
+                                        </div>
+                                    </div>
+                                    <div className="flex flex-wrap gap-2 max-h-36 overflow-y-auto">
+                                        {jiraIssueTypesList.map(type => {
+                                            const isChecked = !!checkedIssueTypesMap[type];
+                                            return (
+                                                <div key={type} onClick={() => setCheckedIssueTypesMap(p => ({ ...p, [type]: !isChecked }))} className={`px-2.5 py-1.5 rounded-lg border flex items-center gap-1.5 cursor-pointer transition-all ${isChecked ? 'bg-indigo-50 border-indigo-300 text-indigo-700' : 'bg-white border-slate-200 text-slate-600'}`}>
+                                                    <span className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center text-[8px] font-bold ${isChecked ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white border-slate-300'}`}>{isChecked ? '✓' : ''}</span>
+                                                    <span className="text-[10px] font-semibold">{type}</span>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    )}
 
                     {jiraPrioritiesList.length > 0 && (
                         <div className="bg-slate-50 border border-slate-200 rounded-xl overflow-hidden mt-1">
