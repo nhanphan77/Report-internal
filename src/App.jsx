@@ -1531,6 +1531,15 @@ export default function App() {
                         typeContainers[issueTypeName][tag][pName].push({ key: issue.key, summary: summary.replace(/\[.*?\]/g, '').trim() });
                     }
                 });
+
+                const collectedTags = new Set();
+                ['BUG', 'IMPROVEMENT', 'QUESTION'].forEach(typeKey => {
+                    const tags = Object.keys(typeContainers[typeKey]);
+                    tags.forEach(tag => collectedTags.add(tag));
+                });
+                if (collectedTags.size > 0) {
+                    setJiraTagsList(Array.from(collectedTags).sort());
+                }
                 
                 const effectivePrioritiesOrder = jiraPrioritiesList.length > 0 ? jiraPrioritiesList : Object.keys(bugPriorityMap);
 
