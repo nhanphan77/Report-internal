@@ -1192,13 +1192,14 @@ export default function App() {
                                 if (statusKey === 'REMAINING') statusKey = 'REMAINS';
 
                                 const colGLower = colG.toLowerCase();
+                                const colGNormalized = colGLower.replace(/\s+/g, '');
                                 const colHLower = colH.toLowerCase();
 
-                                const isStatusFailed = colGLower.includes('fail') || colHLower.includes('fail');
-                                const isStatusIncomplete = colGLower.includes('incomplete') || colGLower.includes('in-complete') || colHLower.includes('incomplete') || colHLower.includes('in-complete');
-                                const isStatusBlocked = colGLower.includes('block') || colHLower.includes('block');
+                                const isStatusFailed = colGLower.includes('fail');
+                                const isStatusBlocked = colGLower.includes('block');
+                                const isStatusInProgress = colGNormalized.includes('inprogress');
 
-                                if (colGLower.includes('fail') || colGLower.includes('incomplete') || colGLower.includes('in-complete') || colGLower.includes('block')) {
+                                if (isStatusFailed || isStatusBlocked || isStatusInProgress) {
                                     statusKey = 'IN PROGRESS';
                                 }
 
@@ -1220,10 +1221,10 @@ export default function App() {
                                     if (isStatusFailed) {
                                         if (!hasRemainingPercent) continue;
                                         displayRemaining = `${colE} Failed`;
-                                    } else if (isStatusIncomplete) {
-                                        displayRemaining = hasRemainingPercent ? `${colE} In-completed` : 'In-completed';
-                                    } else if (isStatusBlocked) {
-                                        displayRemaining = hasRemainingPercent ? `${colE} Blocked` : 'Blocked';
+                                    } else if (isStatusInProgress && hasRemainingPercent) {
+                                        displayRemaining = `${colE} In-completed`;
+                                    } else if (isStatusBlocked && hasRemainingPercent) {
+                                        displayRemaining = `${colE} Blocked`;
                                     }
                                 }
 
