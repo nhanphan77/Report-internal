@@ -646,7 +646,7 @@ export default function App() {
                     if (resourcesData.length > 0) {
                         setJiraCloudId(resourcesData[0].id);
                         localStorage.setItem('jira_cloud_id', resourcesData[0].id);
-                    }			
+                    }
 
                     setJiraToken(data.access_token);
                     setJiraRefreshToken(data.refresh_token);
@@ -1191,9 +1191,15 @@ export default function App() {
                                 let statusKey = colG.toUpperCase();
                                 if (statusKey === 'REMAINING') statusKey = 'REMAINS';
 
-                                let isStatusFailed = colG.toLowerCase().includes('fail');
-                                if (isStatusFailed) {
-                                    statusKey = 'IN PROGRESS'; 
+                                const colGLower = colG.toLowerCase();
+                                const colHLower = colH.toLowerCase();
+
+                                const isStatusFailed = colGLower.includes('fail') || colHLower.includes('fail');
+                                const isStatusIncomplete = colGLower.includes('incomplete') || colGLower.includes('in-complete') || colHLower.includes('incomplete') || colHLower.includes('in-complete');
+                                const isStatusBlocked = colGLower.includes('block') || colHLower.includes('block');
+
+                                if (colGLower.includes('fail') || colGLower.includes('incomplete') || colGLower.includes('in-complete') || colGLower.includes('block')) {
+                                    statusKey = 'IN PROGRESS';
                                 }
 
                                 if (colE && !colE.includes('%') && !isNaN(colE)) colE = ((parseFloat(colE) * 100).toFixed(2) + '%').replace('.00%', '%');
@@ -1206,14 +1212,25 @@ export default function App() {
                                 if (statusKey === 'DONE' && colE !== '0%') {
                                     sheetValidationErrors.push(`- [${colA}]: Is in DONE but % Remaining = ${colE} (Must be 0%)`);
                                 }
-                                
+
+                                const hasRemainingPercent = colE && colE !== '0%' && parseFloat(colE) !== 0;
                                 let displayRemaining = colE;
-                                
-                                if ((statusKey === 'IN PROGRESS' && colH.toLowerCase().includes('failed')) || isStatusFailed) {
-                                    displayRemaining = 'Failed';
+
+                                if (statusKey === 'IN PROGRESS') {
+                                    if (isStatusFailed) {
+                                        if (!hasRemainingPercent) continue;
+                                        displayRemaining = `${colE} Failed`;
+                                    } else if (isStatusIncomplete) {
+                                        displayRemaining = hasRemainingPercent ? `${colE} In-completed` : 'In-completed';
+                                    } else if (isStatusBlocked) {
+                                        displayRemaining = hasRemainingPercent ? `${colE} Blocked` : 'Blocked';
+                                    }
                                 }
-                                if (statusKey === 'DONE' && colH.toLowerCase().includes('warning')) displayRemaining = 'Passed with warning';
-                                
+
+                                if (statusKey === 'DONE' && colHLower.includes('warning')) {
+                                    displayRemaining = 'Passed with warning';
+                                }
+
                                 let disp = displayRemaining;
                                 if (statusKey === 'DONE' && disp !== 'Passed with warning') disp = '';
                                 if (statusKey === 'REMAINS') disp = '';
@@ -1412,9 +1429,6 @@ export default function App() {
 
                         subGroupItems.forEach(item => {
                             let textVal = item.isMergedString ? item.mergedVal : item.displayValue;
-                            if (item.statusKey === 'IN PROGRESS' && textVal && textVal.includes('%')) {
-                                textVal = `Remain ${textVal}`;
-                            }
                             let lineText = textVal ? `  + ${item.name}: ${textVal}\n` : `  + ${item.name}\n`;
                             globalMergedLines.push({ text: lineText, rowOriginalIndex: item.rowOriginalIndex || 9999, statusKey: item.statusKey });
                         });
