@@ -89,7 +89,7 @@ const findBestTabMatch = (tcName, tabs) => {
         }
     }
 
-    return bestTab || tabs[0];
+    return bestTab || tabs[1];
 };
 
 const SearchableDropdown = React.forwardRef(({ options, value, onChange, placeholder, isError, isMulti = false }, ref) => {
