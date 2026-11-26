@@ -28,6 +28,70 @@ const extractDomain = (url) => {
     }
 };
 
+const tokenizeText = (str) => {
+    return (str || '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, ' ')
+        .trim()
+        .split(/\s+/)
+        .filter(Boolean);
+};
+
+const findBestFileMatch = (tcName, files) => {
+    if (!tcName || !files || files.length === 0) return '';
+    const tcLower = tcName.toLowerCase();
+    const tcTokens = tokenizeText(tcName);
+    let bestFileId = '';
+    let bestScore = 0;
+
+    files.forEach(file => {
+        const fileLower = file.name.toLowerCase();
+        const fileTokens = tokenizeText(file.name);
+        let score = 0;
+
+        if (tcLower.includes(fileLower) || fileLower.includes(tcLower)) {
+            score += 10;
+        }
+        fileTokens.forEach(ft => {
+            if (tcTokens.includes(ft)) score += 3;
+            else if (tcLower.includes(ft) && ft.length >= 2) score += 1;
+        });
+
+        if (score > bestScore) {
+            bestScore = score;
+            bestFileId = file.id;
+        }
+    });
+
+    return bestFileId;
+};
+
+const findBestTabMatch = (tcName, tabs) => {
+    if (!tabs || tabs.length === 0) return '';
+    const tcLower = tcName.toLowerCase();
+    const tcTokens = tokenizeText(tcName);
+    let bestTab = '';
+    let bestScore = 0;
+
+    for (let i = tabs.length - 1; i >= 0; i--) {
+        const tab = tabs[i];
+        const tabTokens = tokenizeText(tab);
+        let score = 0;
+
+        tabTokens.forEach(tt => {
+            if (tcTokens.includes(tt)) score += 3;
+            else if (tcLower.includes(tt) && tt.length >= 2) score += 1;
+        });
+
+        if (score > bestScore) {
+            bestScore = score;
+            bestTab = tab;
+        }
+    }
+
+    return bestTab || tabs[tabs.length - 1];
+};
+
 const SearchableDropdown = React.forwardRef(({ options, value, onChange, placeholder, isError, isMulti = false }, ref) => {
     const [isOpen, setIsOpen] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
@@ -212,6 +276,11 @@ export default function App() {
     const [selectedTaskKey, setSelectedTaskKey] = useState([]);
     const [isLoadingEpics, setIsLoadingEpics] = useState(false);
     const [isLoadingTasks, setIsLoadingTasks] = useState(false);
+
+    const [inProgressTcs, setInProgressTcs] = useState([]);
+    const [driveFolderFiles, setDriveFolderFiles] = useState([]);
+    const [driveFileTabsMap, setDriveFileTabsMap] = useState({});
+    const [isLoadingTcsMapping, setIsLoadingTcsMapping] = useState(false);
 
     const [outputReport, setOutputReport] = useState('');
     const [isPreviewOpen, setIsPreviewOpen] = useState(false);
@@ -769,6 +838,165 @@ export default function App() {
             hideLoadingToast();
             showToast("Google Sheets Error: " + error.message, 'error');
         }
+    };
+
+    const fetchSpreadsheetsInFolder = async (folderUrl, token) => {
+        const folderIdMatch = folderUrl.match(/(?:folders\/|d\/|id=)([a-zA-Z0-9-_]+)/);
+        if (!folderIdMatch) return [];
+        const folderId = folderIdMatch[1];
+        const q = encodeURIComponent(`'${folderId}' in parents and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false`);
+        const url = `https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name)&pageSize=100&supportsAllDrives=true&includeItemsFromAllDrives=true`;
+        const res = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } });
+        if (!res.ok) return [];
+        const data = await res.json();
+        return data.files || [];
+    };
+
+    const fetchTabsForSpreadsheet = async (spreadsheetId, token) => {
+        const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?fields=sheets.properties.title`;
+        const res = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } });
+        if (!res.ok) return [];
+        const data = await res.json();
+        return (data.sheets || []).map(s => s.properties.title);
+    };
+
+    const handleLoadInProgressTcs = async () => {
+        if (!sheetTabName || sheetTabName.length === 0) {
+            showToast("Please select Sheet Tab Name first.", 'error');
+            return;
+        }
+        setIsLoadingTcsMapping(true);
+        showToast("Scanning In Progress / Failed TCs & Drive folder...", 'loading');
+
+        try {
+            let token = await getGoogleTokenAsync();
+            const spreadsheetId = "1XF2bOLyXoVM3Py6qYBidSe1tcfOqMuuwg14wnLVf1lA";
+            let folderLink = '';
+            let foundTcs = [];
+
+            for (const tabName of sheetTabName) {
+                const sheetApiUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/'${encodeURIComponent(tabName)}'`;
+                let sheetRes = await fetch(sheetApiUrl, { headers: { 'Authorization': `Bearer ${token}` } });
+                if (sheetRes.status === 401) {
+                    token = await getGoogleTokenAsync(true);
+                    sheetRes = await fetch(sheetApiUrl, { headers: { 'Authorization': `Bearer ${token}` } });
+                }
+                if (!sheetRes.ok) continue;
+
+                const sheetData = await sheetRes.json();
+                const rows = sheetData.values || [];
+
+                if (!folderLink) {
+                    const a1ApiUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?ranges='${encodeURIComponent(tabName)}'!A1&fields=sheets.data.rowData.values(hyperlink,formattedValue,textFormatRuns,chipRuns)`;
+                    const a1Res = await fetch(a1ApiUrl, { headers: { 'Authorization': `Bearer ${token}` } });
+                    if (a1Res.ok) {
+                        const a1Data = await a1Res.json();
+                        try {
+                            const cell = a1Data.sheets[0].data[0].rowData[0].values[0];
+                            if (cell.hyperlink) folderLink = cell.hyperlink;
+                            else if (cell.chipRuns?.[0]?.chip?.richLinkProperties?.uri) folderLink = cell.chipRuns[0].chip.richLinkProperties.uri;
+                            else if (cell.textFormatRuns?.find(r => r.format?.link?.uri)) folderLink = cell.textFormatRuns.find(r => r.format?.link?.uri).format.link.uri;
+                            else folderLink = cell.formattedValue || '';
+                            folderLink = folderLink.trim();
+                        } catch { }
+                    }
+                }
+
+                for (let i = 1; i < rows.length; i++) {
+                    const row = rows[i];
+                    const colA = row[0] ? row[0].toString().trim() : '';
+                    const colB = row[1] ? row[1].toString().trim() : '';
+                    let colE = row[4] ? row[4].toString().trim() : '';
+                    const colG = row[6] ? row[6].toString().trim() : '';
+
+                    if (colA && colB && colG) {
+                        const colGLower = colG.toLowerCase();
+                        const colGNormalized = colGLower.replace(/\s+/g, '');
+                        const isFailed = colGLower.includes('fail');
+                        const isInProgress = colGNormalized.includes('inprogress');
+
+                        if (isFailed || isInProgress) {
+                            if (colE && !colE.includes('%') && !isNaN(colE)) colE = ((parseFloat(colE) * 100).toFixed(2) + '%').replace('.00%', '%');
+                            else if (!colE) colE = '0%';
+                            else colE = colE.replace('.00%', '%');
+
+                            foundTcs.push({
+                                id: `${tabName}_${i}`,
+                                name: colA,
+                                status: colG,
+                                remaining: colE,
+                                selectedFileId: '',
+                                selectedTab: ''
+                            });
+                        }
+                    }
+                }
+            }
+
+            let files = [];
+            if (folderLink && folderLink.includes('drive.google.com')) {
+                files = await fetchSpreadsheetsInFolder(folderLink, token);
+                setDriveFolderFiles(files);
+            }
+
+            const tabsCache = { ...driveFileTabsMap };
+            const matchedFileIds = new Set();
+
+            foundTcs = foundTcs.map(tc => {
+                const matchedFileId = findBestFileMatch(tc.name, files);
+                if (matchedFileId) matchedFileIds.add(matchedFileId);
+                return { ...tc, selectedFileId: matchedFileId };
+            });
+
+            for (const fileId of matchedFileIds) {
+                if (!tabsCache[fileId]) {
+                    tabsCache[fileId] = await fetchTabsForSpreadsheet(fileId, token);
+                }
+            }
+            setDriveFileTabsMap(tabsCache);
+
+            foundTcs = foundTcs.map(tc => {
+                const tabs = tabsCache[tc.selectedFileId] || [];
+                const matchedTab = findBestTabMatch(tc.name, tabs);
+                return { ...tc, selectedTab: matchedTab };
+            });
+
+            setInProgressTcs(foundTcs);
+            hideLoadingToast();
+            showToast(`Loaded ${foundTcs.length} TCs and ${files.length} files from Drive.`, 'success');
+        } catch (err) {
+            hideLoadingToast();
+            showToast("Failed to load TCs: " + err.message, 'error');
+        } finally {
+            setIsLoadingTcsMapping(false);
+        }
+    };
+
+    const handleTcFileChange = async (tcIndex, newFileId) => {
+        setInProgressTcs(prev => prev.map((tc, idx) => idx === tcIndex ? { ...tc, selectedFileId: newFileId, selectedTab: '' } : tc));
+
+        if (!newFileId) return;
+
+        let tabs = driveFileTabsMap[newFileId];
+        if (!tabs) {
+            try {
+                const token = await getGoogleTokenAsync();
+                tabs = await fetchTabsForSpreadsheet(newFileId, token);
+                setDriveFileTabsMap(prev => ({ ...prev, [newFileId]: tabs }));
+            } catch (err) {
+                showToast("Failed to load tabs for selected file.", 'error');
+                return;
+            }
+        }
+
+        setInProgressTcs(prev => prev.map((tc, idx) => {
+            if (idx !== tcIndex) return tc;
+            return { ...tc, selectedTab: findBestTabMatch(tc.name, tabs) };
+        }));
+    };
+
+    const handleTcTabChange = (tcIndex, newTab) => {
+        setInProgressTcs(prev => prev.map((tc, idx) => idx === tcIndex ? { ...tc, selectedTab: newTab } : tc));
     };
 
     const getGameIdFromDriveFolder = async (folderUrl, token) => {
@@ -2482,6 +2710,71 @@ export default function App() {
                 </section>
 
             </main>
+
+            <section className="w-full mt-6 bg-white border border-slate-200 rounded-2xl p-5 shadow-sm flex flex-col gap-4">
+                <div className="flex flex-wrap justify-between items-center gap-3">
+                    <h2 className="text-sm font-bold text-slate-800 tracking-wide flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-amber-500"></span>
+                        <span>In Progress / Failed Test Cases ({inProgressTcs.length})</span>
+                    </h2>
+                    <button
+                        type="button"
+                        onClick={handleLoadInProgressTcs}
+                        disabled={isLoadingTcsMapping}
+                        className="px-3.5 h-9 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-sm transition-all disabled:opacity-50 flex items-center gap-1.5"
+                    >
+                        <span>{isLoadingTcsMapping ? "Loading..." : "↻ Load TCs & Folder"}</span>
+                    </button>
+                </div>
+
+                {inProgressTcs.length === 0 ? (
+                    <div className="p-6 text-center text-xs text-slate-400 italic bg-slate-50 rounded-xl border border-dashed border-slate-200">
+                        No In Progress / Failed TCs loaded. Select Sheet Tab Name and click <strong>↻ Load TCs & Folder</strong>.
+                    </div>
+                ) : (
+                    <div className="flex flex-col gap-2.5">
+                        <div className="hidden md:grid grid-cols-12 gap-3 px-3 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                            <div className="col-span-4">Test Case (Status)</div>
+                            <div className="col-span-4">Google Sheet File (Folder A1)</div>
+                            <div className="col-span-4">Tab Sheet</div>
+                        </div>
+                        {inProgressTcs.map((tc, idx) => {
+                            const isFailed = tc.status.toLowerCase().includes('fail');
+                            const fileOptions = driveFolderFiles.map(f => ({ value: f.id, label: f.name }));
+                            const tabOptions = (driveFileTabsMap[tc.selectedFileId] || []).map(t => ({ value: t, label: t }));
+                            return (
+                                <div key={tc.id} className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center p-3 bg-slate-50 border border-slate-200 rounded-xl">
+                                    <div className="md:col-span-4 flex items-center justify-between gap-2">
+                                        <span className="text-xs font-bold text-slate-800 truncate" title={tc.name}>{tc.name}</span>
+                                        <div className="flex items-center gap-1.5 shrink-0">
+                                            <span className="text-[10px] font-bold text-slate-500">{tc.remaining}</span>
+                                            <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${isFailed ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-700'}`}>
+                                                {tc.status}
+                                            </span>
+                                        </div>
+                                    </div>
+                                    <div className="md:col-span-4">
+                                        <SearchableDropdown
+                                            options={fileOptions}
+                                            value={tc.selectedFileId}
+                                            onChange={(val) => handleTcFileChange(idx, val)}
+                                            placeholder="Select Google Sheet file..."
+                                        />
+                                    </div>
+                                    <div className="md:col-span-4">
+                                        <SearchableDropdown
+                                            options={tabOptions}
+                                            value={tc.selectedTab}
+                                            onChange={(val) => handleTcTabChange(idx, val)}
+                                            placeholder={tc.selectedFileId ? "Select Tab Sheet..." : "Select file first..."}
+                                        />
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                )}
+            </section>
 
             <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40">
                 <div className="bg-white/90 backdrop-blur-md border border-slate-200 text-slate-900 rounded-2xl p-2 shadow-2xl flex items-center justify-center gap-2">
