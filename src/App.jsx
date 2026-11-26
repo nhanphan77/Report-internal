@@ -37,6 +37,10 @@ const tokenizeText = (str) => {
         .filter(Boolean);
 };
 
+const isChangelogTab = (tabName) => {
+    return (tabName || '').toLowerCase().replace(/\s+/g, '').includes('changelog');
+};
+
 const findBestFileMatch = (tcName, files) => {
     if (!tcName || !files || files.length === 0) return '';
     const tcLower = tcName.toLowerCase();
@@ -68,13 +72,16 @@ const findBestFileMatch = (tcName, files) => {
 
 const findBestTabMatch = (tcName, tabs) => {
     if (!tabs || tabs.length === 0) return '';
+    const nonChangelogTabs = tabs.filter(t => !isChangelogTab(t));
+    if (nonChangelogTabs.length === 0) return tabs[0];
+
     const tcLower = tcName.toLowerCase();
     const tcTokens = tokenizeText(tcName);
     let bestTab = '';
     let bestScore = 0;
 
-    for (let i = 0; i < tabs.length; i++) {
-        const tab = tabs[i];
+    for (let i = 0; i < nonChangelogTabs.length; i++) {
+        const tab = nonChangelogTabs[i];
         const tabTokens = tokenizeText(tab);
         let score = 0;
 
@@ -89,7 +96,25 @@ const findBestTabMatch = (tcName, tabs) => {
         }
     }
 
-    return bestTab || tabs[1];
+    if (bestTab) return bestTab;
+    if (tabs.length >= 2 && !isChangelogTab(tabs[1])) return tabs[1];
+    return nonChangelogTabs[1] || nonChangelogTabs[0];
+};
+
+const getSavedTcMappings = () => {
+    try {
+        return JSON.parse(localStorage.getItem('tc_mapping_cache')) || {};
+    } catch {
+        return {};
+    }
+};
+
+const saveTcMappingToCache = (projectKey, tcName, fileId, tabName) => {
+    if (!projectKey || !tcName) return;
+    const cache = getSavedTcMappings();
+    const key = `${projectKey.trim().toUpperCase()}___${tcName.trim().toLowerCase()}`;
+    cache[key] = { fileId: fileId || '', tabName: tabName || '' };
+    localStorage.setItem('tc_mapping_cache', JSON.stringify(cache));
 };
 
 const SearchableDropdown = React.forwardRef(({ options, value, onChange, placeholder, isError, isMulti = false }, ref) => {
@@ -281,6 +306,7 @@ export default function App() {
     const [driveFolderFiles, setDriveFolderFiles] = useState([]);
     const [driveFileTabsMap, setDriveFileTabsMap] = useState({});
     const [isLoadingTcsMapping, setIsLoadingTcsMapping] = useState(false);
+    const [isTcMappingAccordionOpen, setIsTcMappingAccordionOpen] = useState(false);
 
     const [outputReport, setOutputReport] = useState('');
     const [isPreviewOpen, setIsPreviewOpen] = useState(false);
@@ -861,62 +887,121 @@ export default function App() {
     };
 
     const fetchTcBreakdownFromTab = async (fileId, tabName, token) => {
-    if (!fileId || !tabName) return '';
-    try {
-        const url = `https://sheets.googleapis.com/v4/spreadsheets/${fileId}/values/'${encodeURIComponent(tabName)}'`;
-        const res = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } });
-        if (!res.ok) return '';
-        const data = await res.json();
-        const rows = data.values || [];
+        if (!fileId || !tabName) return '';
+        try {
+            const url = `https://sheets.googleapis.com/v4/spreadsheets/${fileId}/values/'${encodeURIComponent(tabName)}'`;
+            const res = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } });
+            if (!res.ok) return '';
+            const data = await res.json();
+            const rows = data.values || [];
 
-        const passedParts = { passed: 0, na: 0, notTested: 0, warning: 0 };
-        const stats = { Passed: '', Failed: '', Blocked: '', 'In-completed': '' };
+            const passedParts = { passed: 0, na: 0, notTested: 0, warning: 0 };
+            const stats = { Passed: '', Failed: '', Blocked: '', 'In-completed': '' };
 
-        for (let i = 0; i < rows.length; i++) {
-            const row = rows[i];
-            for (let j = 2; j < row.length; j++) {
-                const valCell = row[j] ? row[j].toString().trim() : '';
-                const labelCell = row[j - 2] ? row[j - 2].toString().trim().toLowerCase() : '';
+            for (let i = 0; i < rows.length; i++) {
+                const row = rows[i];
+                for (let j = 2; j < row.length; j++) {
+                    const valCell = row[j] ? row[j].toString().trim() : '';
+                    const labelCell = row[j - 2] ? row[j - 2].toString().trim().toLowerCase() : '';
 
-                if (!valCell.includes('%')) continue;
+                    if (!valCell.includes('%')) continue;
 
-                const cleanPct = valCell.replace('.00%', '%');
-                const numVal = parseFloat(cleanPct);
-                if (isNaN(numVal)) continue;
+                    const cleanPct = valCell.replace('.00%', '%');
+                    const numVal = parseFloat(cleanPct);
+                    if (isNaN(numVal)) continue;
 
-                if (labelCell === 'passed') {
-                    passedParts.passed = numVal;
-                } else if (labelCell === 'n/a' || labelCell === 'na') {
-                    passedParts.na = numVal;
-                } else if (labelCell === 'not tested' || labelCell === 'nottested') {
-                    passedParts.notTested = numVal;
-                } else if (labelCell.includes('warning')) {
-                    passedParts.warning = numVal;
-                } else if (numVal !== 0) {
-                    if (labelCell === 'failed') {
-                        stats.Failed = `${cleanPct} Failed`;
-                    } else if (labelCell === 'blocked') {
-                        stats.Blocked = `${cleanPct} Blocked`;
-                    } else if (labelCell.includes('incomplete') || labelCell.includes('in-complete')) {
-                        stats['In-completed'] = `${cleanPct} In-completed`;
+                    if (labelCell === 'passed') {
+                        passedParts.passed = numVal;
+                    } else if (labelCell === 'n/a' || labelCell === 'na') {
+                        passedParts.na = numVal;
+                    } else if (labelCell === 'not tested' || labelCell === 'nottested') {
+                        passedParts.notTested = numVal;
+                    } else if (labelCell.includes('warning')) {
+                        passedParts.warning = numVal;
+                    } else if (numVal !== 0) {
+                        if (labelCell === 'failed') {
+                            stats.Failed = `${cleanPct} Failed`;
+                        } else if (labelCell === 'blocked') {
+                            stats.Blocked = `${cleanPct} Blocked`;
+                        } else if (labelCell.includes('incomplete') || labelCell.includes('in-complete')) {
+                            stats['In-completed'] = `${cleanPct} In-completed`;
+                        }
                     }
                 }
             }
+
+            const totalPassed = Number((passedParts.passed + passedParts.na + passedParts.notTested + passedParts.warning).toFixed(2));
+            if (totalPassed > 0) {
+                stats.Passed = `${totalPassed}% Passed`;
+            }
+
+            return ['Passed', 'Failed', 'Blocked', 'In-completed']
+                .map(key => stats[key])
+                .filter(Boolean)
+                .join(', ');
+        } catch {
+            return '';
+        }
+    };
+
+    const resolveTcMappings = async (tcsList, folderLink, token, existingFiles = null, existingTabsMap = null) => {
+        let files = existingFiles && existingFiles.length > 0 ? existingFiles : [];
+        if (files.length === 0 && folderLink && folderLink.includes('drive.google.com')) {
+            files = await fetchSpreadsheetsInFolder(folderLink, token);
+            setDriveFolderFiles(files);
         }
 
-        const totalPassed = Number((passedParts.passed + passedParts.na + passedParts.notTested + passedParts.warning).toFixed(2));
-        if (totalPassed > 0) {
-            stats.Passed = `${totalPassed}% Passed`;
-        }
+        const savedCache = getSavedTcMappings();
+        const projectKeyUpper = (sheetName || '').split(',')[0].trim().toUpperCase();
+        const tabsCache = { ...(existingTabsMap || driveFileTabsMap) };
+        const fileIdsToLoadTabs = new Set();
 
-        return ['Passed', 'Failed', 'Blocked', 'In-completed']
-            .map(key => stats[key])
-            .filter(Boolean)
-            .join(', ');
-    } catch {
-        return '';
-    }
-};
+        let resolved = tcsList.map(tc => {
+            const existingInState = inProgressTcs.find(
+                item => item.name.trim().toLowerCase() === tc.name.trim().toLowerCase() && item.selectedFileId
+            );
+            const cacheKey = `${projectKeyUpper}___${tc.name.trim().toLowerCase()}`;
+            const cached = savedCache[cacheKey];
+
+            let matchedFileId = '';
+            let preferredTab = '';
+
+            if (existingInState && files.some(f => f.id === existingInState.selectedFileId)) {
+                matchedFileId = existingInState.selectedFileId;
+                preferredTab = existingInState.selectedTab || '';
+            } else if (cached && cached.fileId && files.some(f => f.id === cached.fileId)) {
+                matchedFileId = cached.fileId;
+                preferredTab = cached.tabName || '';
+            } else {
+                matchedFileId = findBestFileMatch(tc.name, files);
+            }
+
+            if (matchedFileId) fileIdsToLoadTabs.add(matchedFileId);
+            return { ...tc, selectedFileId: matchedFileId, _preferredTab: preferredTab };
+        });
+
+        for (const fileId of fileIdsToLoadTabs) {
+            if (!tabsCache[fileId]) {
+                tabsCache[fileId] = await fetchTabsForSpreadsheet(fileId, token);
+            }
+        }
+        setDriveFileTabsMap(tabsCache);
+
+        resolved = resolved.map(tc => {
+            const tabs = tabsCache[tc.selectedFileId] || [];
+            let matchedTab = '';
+            if (tc._preferredTab && tabs.includes(tc._preferredTab)) {
+                matchedTab = tc._preferredTab;
+            } else {
+                matchedTab = findBestTabMatch(tc.name, tabs);
+            }
+            const { _preferredTab, ...cleanTc } = tc;
+            return { ...cleanTc, selectedTab: matchedTab };
+        });
+
+        setInProgressTcs(resolved);
+        return { resolved, files, tabsCache };
+    };
 
     const handleLoadInProgressTcs = async () => {
         if (!sheetTabName || sheetTabName.length === 0) {
@@ -991,37 +1076,10 @@ export default function App() {
                 }
             }
 
-            let files = [];
-            if (folderLink && folderLink.includes('drive.google.com')) {
-                files = await fetchSpreadsheetsInFolder(folderLink, token);
-                setDriveFolderFiles(files);
-            }
-
-            const tabsCache = { ...driveFileTabsMap };
-            const matchedFileIds = new Set();
-
-            foundTcs = foundTcs.map(tc => {
-                const matchedFileId = findBestFileMatch(tc.name, files);
-                if (matchedFileId) matchedFileIds.add(matchedFileId);
-                return { ...tc, selectedFileId: matchedFileId };
-            });
-
-            for (const fileId of matchedFileIds) {
-                if (!tabsCache[fileId]) {
-                    tabsCache[fileId] = await fetchTabsForSpreadsheet(fileId, token);
-                }
-            }
-            setDriveFileTabsMap(tabsCache);
-
-            foundTcs = foundTcs.map(tc => {
-                const tabs = tabsCache[tc.selectedFileId] || [];
-                const matchedTab = findBestTabMatch(tc.name, tabs);
-                return { ...tc, selectedTab: matchedTab };
-            });
-
-            setInProgressTcs(foundTcs);
+            const { resolved, files } = await resolveTcMappings(foundTcs, folderLink, token);
+            setIsTcMappingAccordionOpen(true);
             hideLoadingToast();
-            showToast(`Loaded ${foundTcs.length} TCs and ${files.length} files from Drive.`, 'success');
+            showToast(`Loaded ${resolved.length} TCs and ${files.length} files from Drive.`, 'success');
         } catch (err) {
             hideLoadingToast();
             showToast("Failed to load TCs: " + err.message, 'error');
@@ -1031,9 +1089,13 @@ export default function App() {
     };
 
     const handleTcFileChange = async (tcIndex, newFileId) => {
+        const targetTc = inProgressTcs[tcIndex];
         setInProgressTcs(prev => prev.map((tc, idx) => idx === tcIndex ? { ...tc, selectedFileId: newFileId, selectedTab: '' } : tc));
 
-        if (!newFileId) return;
+        if (!newFileId) {
+            if (targetTc) saveTcMappingToCache(sheetName.split(',')[0], targetTc.name, '', '');
+            return;
+        }
 
         let tabs = driveFileTabsMap[newFileId];
         if (!tabs) {
@@ -1047,13 +1109,22 @@ export default function App() {
             }
         }
 
+        const matchedTab = targetTc ? findBestTabMatch(targetTc.name, tabs) : '';
+        if (targetTc) {
+            saveTcMappingToCache(sheetName.split(',')[0], targetTc.name, newFileId, matchedTab);
+        }
+
         setInProgressTcs(prev => prev.map((tc, idx) => {
             if (idx !== tcIndex) return tc;
-            return { ...tc, selectedTab: findBestTabMatch(tc.name, tabs) };
+            return { ...tc, selectedTab: matchedTab };
         }));
     };
 
     const handleTcTabChange = (tcIndex, newTab) => {
+        const targetTc = inProgressTcs[tcIndex];
+        if (targetTc) {
+            saveTcMappingToCache(sheetName.split(',')[0], targetTc.name, targetTc.selectedFileId, newTab);
+        }
         setInProgressTcs(prev => prev.map((tc, idx) => idx === tcIndex ? { ...tc, selectedTab: newTab } : tc));
     };
 
@@ -1391,6 +1462,7 @@ export default function App() {
             let finalReport = '';
             let autoTestcaseLink = '';
             let rawSheetItems = [];
+            let detectedInProgressTcs = [];
             let doneHeaderPercent = '0%';
             let inProgressHeaderPercent = '0%';
             let remainingHeaderPercent = '0%';
@@ -1493,6 +1565,17 @@ export default function App() {
                                 else if (!colE) colE = '0%';
                                 else colE = colE.replace('.00%', '%');
 
+                                if (isStatusFailed || isStatusInProgress) {
+                                    detectedInProgressTcs.push({
+                                        id: `${tabName}_${i}`,
+                                        name: colA,
+                                        status: colG,
+                                        remaining: colE,
+                                        selectedFileId: '',
+                                        selectedTab: ''
+                                    });
+                                }
+
                                 if (statusKey === 'REMAINS' && colE !== '100%') {
                                     sheetValidationErrors.push(`- [${colA}]: Is in REMAINS but % Remaining = ${colE} (Must be 100%)`);
                                 }
@@ -1533,29 +1616,6 @@ export default function App() {
                     }
                 }
 
-                if (inProgressTcs.length > 0 && rawSheetItems.length > 0) {
-                    showToast('Reading detailed % from mapped TC sheets...', 'loading');
-                    const breakdownCache = {};
-
-                    for (const item of rawSheetItems) {
-                        if (item.statusKey !== 'IN PROGRESS') continue;
-
-                        const mappedTc = inProgressTcs.find(
-                            tc => tc.name.trim().toLowerCase() === item.name.trim().toLowerCase() && tc.selectedFileId && tc.selectedTab
-                        );
-
-                        if (mappedTc) {
-                            const cacheKey = `${mappedTc.selectedFileId}___${mappedTc.selectedTab}`;
-                            if (breakdownCache[cacheKey] === undefined) {
-                                breakdownCache[cacheKey] = await fetchTcBreakdownFromTab(mappedTc.selectedFileId, mappedTc.selectedTab, token);
-                            }
-                            if (breakdownCache[cacheKey]) {
-                                item.displayValue = breakdownCache[cacheKey];
-                            }
-                        }
-                    }
-                }
-
                 if (autoTestcaseLink && (autoTestcaseLink.includes("drive.google.com") || autoTestcaseLink.includes("docs.google.com"))) {
                     showToast('Verifying Testcase link...', 'loading');
                     const driveCheck = await getGameIdFromDriveFolder(autoTestcaseLink, token);
@@ -1565,6 +1625,37 @@ export default function App() {
                         return;
                     }
                     if (driveCheck.id) finalGameId = driveCheck.id;
+                }
+
+                if (detectedInProgressTcs.length > 0 && rawSheetItems.length > 0) {
+                    showToast('Auto-matching & reading detailed % from TC sheets...', 'loading');
+                    const { resolved: activeMappings } = await resolveTcMappings(detectedInProgressTcs, autoTestcaseLink, token);
+                    const breakdownCache = {};
+                    let hasUnmatched = false;
+
+                    for (const item of rawSheetItems) {
+                        if (item.statusKey !== 'IN PROGRESS') continue;
+
+                        const mappedTc = activeMappings.find(
+                            tc => tc.name.trim().toLowerCase() === item.name.trim().toLowerCase()
+                        );
+
+                        if (mappedTc && mappedTc.selectedFileId && mappedTc.selectedTab) {
+                            const cacheKey = `${mappedTc.selectedFileId}___${mappedTc.selectedTab}`;
+                            if (breakdownCache[cacheKey] === undefined) {
+                                breakdownCache[cacheKey] = await fetchTcBreakdownFromTab(mappedTc.selectedFileId, mappedTc.selectedTab, token);
+                            }
+                            if (breakdownCache[cacheKey]) {
+                                item.displayValue = breakdownCache[cacheKey];
+                            }
+                        } else if (mappedTc) {
+                            hasUnmatched = true;
+                        }
+                    }
+
+                    if (hasUnmatched) {
+                        setIsTcMappingAccordionOpen(true);
+                    }
                 }
 
                 if (rawSheetItems.length > 0) {
@@ -2792,67 +2883,77 @@ export default function App() {
 
             </main>
 
-            <section className="w-full mt-6 bg-white border border-slate-200 rounded-2xl p-5 shadow-sm flex flex-col gap-4">
-                <div className="flex flex-wrap justify-between items-center gap-3">
-                    <h2 className="text-sm font-bold text-slate-800 tracking-wide flex items-center gap-2">
+            <section className="w-full mt-6 bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+                <div className="p-5 flex flex-wrap justify-between items-center gap-3">
+                    <button
+                        type="button"
+                        onClick={() => setIsTcMappingAccordionOpen(!isTcMappingAccordionOpen)}
+                        className="flex items-center gap-2 text-sm font-bold text-slate-800 tracking-wide hover:text-indigo-700 transition-colors"
+                    >
                         <span className="w-2 h-2 rounded-full bg-amber-500"></span>
                         <span>In Progress / Failed Test Cases ({inProgressTcs.length})</span>
-                    </h2>
+                        <span className="text-xs text-slate-400 font-normal ml-1">(Auto-matched on Generate)</span>
+                        <span className="text-slate-400 text-xs ml-1">{isTcMappingAccordionOpen ? '▲' : '▼'}</span>
+                    </button>
                     <button
                         type="button"
                         onClick={handleLoadInProgressTcs}
                         disabled={isLoadingTcsMapping}
                         className="px-3.5 h-9 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-sm transition-all disabled:opacity-50 flex items-center gap-1.5"
                     >
-                        <span>{isLoadingTcsMapping ? "Loading..." : "↻ Load TCs & Folder"}</span>
+                        <span>{isLoadingTcsMapping ? "Loading..." : "↻ Load / Override TCs"}</span>
                     </button>
                 </div>
 
-                {inProgressTcs.length === 0 ? (
-                    <div className="p-6 text-center text-xs text-slate-400 italic bg-slate-50 rounded-xl border border-dashed border-slate-200">
-                        No In Progress / Failed TCs loaded. Select Sheet Tab Name and click <strong>↻ Load TCs & Folder</strong>.
-                    </div>
-                ) : (
-                    <div className="flex flex-col gap-2.5">
-                        <div className="hidden md:grid grid-cols-12 gap-3 px-3 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                            <div className="col-span-4">Test Case (Status)</div>
-                            <div className="col-span-4">Google Sheet File (Folder A1)</div>
-                            <div className="col-span-4">Tab Sheet</div>
-                        </div>
-                        {inProgressTcs.map((tc, idx) => {
-                            const isFailed = tc.status.toLowerCase().includes('fail');
-                            const fileOptions = driveFolderFiles.map(f => ({ value: f.id, label: f.name }));
-                            const tabOptions = (driveFileTabsMap[tc.selectedFileId] || []).map(t => ({ value: t, label: t }));
-                            return (
-                                <div key={tc.id} className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center p-3 bg-slate-50 border border-slate-200 rounded-xl">
-                                    <div className="md:col-span-4 flex items-center justify-between gap-2">
-                                        <span className="text-xs font-bold text-slate-800 truncate" title={tc.name}>{tc.name}</span>
-                                        <div className="flex items-center gap-1.5 shrink-0">
-                                            <span className="text-[10px] font-bold text-slate-500">{tc.remaining}</span>
-                                            <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${isFailed ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-700'}`}>
-                                                {tc.status}
-                                            </span>
-                                        </div>
-                                    </div>
-                                    <div className="md:col-span-4">
-                                        <SearchableDropdown
-                                            options={fileOptions}
-                                            value={tc.selectedFileId}
-                                            onChange={(val) => handleTcFileChange(idx, val)}
-                                            placeholder="Select Google Sheet file..."
-                                        />
-                                    </div>
-                                    <div className="md:col-span-4">
-                                        <SearchableDropdown
-                                            options={tabOptions}
-                                            value={tc.selectedTab}
-                                            onChange={(val) => handleTcTabChange(idx, val)}
-                                            placeholder={tc.selectedFileId ? "Select Tab Sheet..." : "Select file first..."}
-                                        />
-                                    </div>
+                {isTcMappingAccordionOpen && (
+                    <div className="px-5 pb-5 border-t border-slate-100 pt-4">
+                        {inProgressTcs.length === 0 ? (
+                            <div className="p-6 text-center text-xs text-slate-400 italic bg-slate-50 rounded-xl border border-dashed border-slate-200">
+                                Auto-runs when clicking <strong>Generate</strong>, or click <strong>↻ Load / Override TCs</strong> to adjust manually.
+                            </div>
+                        ) : (
+                            <div className="flex flex-col gap-2.5">
+                                <div className="hidden md:grid grid-cols-12 gap-3 px-3 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                                    <div className="col-span-4">Test Case (Status)</div>
+                                    <div className="col-span-4">Google Sheet File (Folder A1)</div>
+                                    <div className="col-span-4">Tab Sheet</div>
                                 </div>
-                            );
-                        })}
+                                {inProgressTcs.map((tc, idx) => {
+                                    const isFailed = tc.status.toLowerCase().includes('fail');
+                                    const fileOptions = driveFolderFiles.map(f => ({ value: f.id, label: f.name }));
+                                    const tabOptions = (driveFileTabsMap[tc.selectedFileId] || []).map(t => ({ value: t, label: t }));
+                                    return (
+                                        <div key={tc.id} className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center p-3 bg-slate-50 border border-slate-200 rounded-xl">
+                                            <div className="md:col-span-4 flex items-center justify-between gap-2">
+                                                <span className="text-xs font-bold text-slate-800 truncate" title={tc.name}>{tc.name}</span>
+                                                <div className="flex items-center gap-1.5 shrink-0">
+                                                    <span className="text-[10px] font-bold text-slate-500">{tc.remaining}</span>
+                                                    <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${isFailed ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-700'}`}>
+                                                        {tc.status}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                            <div className="md:col-span-4">
+                                                <SearchableDropdown
+                                                    options={fileOptions}
+                                                    value={tc.selectedFileId}
+                                                    onChange={(val) => handleTcFileChange(idx, val)}
+                                                    placeholder="Select Google Sheet file..."
+                                                />
+                                            </div>
+                                            <div className="md:col-span-4">
+                                                <SearchableDropdown
+                                                    options={tabOptions}
+                                                    value={tc.selectedTab}
+                                                    onChange={(val) => handleTcTabChange(idx, val)}
+                                                    placeholder={tc.selectedFileId ? "Select Tab Sheet..." : "Select file first..."}
+                                                />
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
                     </div>
                 )}
             </section>
