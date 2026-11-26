@@ -164,23 +164,25 @@ const SearchableDropdown = React.forwardRef(({ options, value, onChange, placeho
         }
     };
 
+    const hasValue = isMulti ? (Array.isArray(value) && value.length > 0) : Boolean(value);
+
     return (
         <div ref={wrapperRef} className="relative w-full">
             <div 
                 ref={ref}
                 tabIndex={0}
-                className={`min-h-[40px] px-3.5 py-2 bg-white border rounded-xl text-xs font-semibold text-slate-900 flex items-center justify-between cursor-pointer transition-all ${isError ? 'border-rose-500 ring-1 ring-rose-500' : 'border-slate-300 hover:border-slate-400 focus:border-indigo-600 focus:ring-1 focus:ring-indigo-600 outline-none'}`}
+                className={`min-h-[38px] px-3 py-2 bg-white border rounded-xl text-xs font-medium flex items-center justify-between cursor-pointer transition-all ${hasValue ? 'text-slate-900 font-semibold' : 'text-slate-400'} ${isError ? 'border-rose-500 ring-1 ring-rose-500' : 'border-slate-300 hover:border-slate-400 focus:border-indigo-600 focus:ring-1 focus:ring-indigo-600 outline-none'}`}
                 onClick={() => { setIsOpen(!isOpen); setSearchTerm(''); }}
             >
                 <span className="truncate">{displayLabel}</span>
-                <span className="text-slate-400 ml-2 text-[10px]">▼</span>
+                <span className="text-slate-400 ml-2 text-[10px] shrink-0">▼</span>
             </div>
             {isOpen && (
                 <div className="absolute z-50 w-full mt-1 bg-white border border-slate-200 rounded-xl shadow-xl max-h-60 flex flex-col overflow-hidden">
                     <div className="p-2 border-b border-slate-100 bg-slate-50">
                         <input 
                             type="text" 
-                            className="w-full p-2 border border-slate-200 rounded-lg text-xs font-medium focus:outline-none focus:border-indigo-500" 
+                            className="w-full p-2 border border-slate-200 rounded-lg text-xs font-medium text-slate-800 focus:outline-none focus:border-indigo-500" 
                             placeholder="Search..." 
                             value={searchTerm}
                             onChange={e => setSearchTerm(e.target.value)}
@@ -195,7 +197,7 @@ const SearchableDropdown = React.forwardRef(({ options, value, onChange, placeho
                             return (
                                 <div 
                                     key={i} 
-                                    className="px-3 py-2.5 text-xs font-medium text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 cursor-pointer transition-colors border-b border-slate-50 last:border-0 flex items-center gap-2"
+                                    className={`px-3 py-2 text-xs font-medium hover:bg-indigo-50 hover:text-indigo-700 cursor-pointer transition-colors border-b border-slate-50 last:border-0 flex items-center gap-2 ${isSelected ? 'bg-indigo-50/60 text-indigo-700 font-semibold' : 'text-slate-700'}`}
                                     onClick={() => handleSelect(val)}
                                 >
                                     {isMulti && (
@@ -280,15 +282,15 @@ export default function App() {
     
     const [jiraIssueTypesList, setJiraIssueTypesList] = useState([]);
     const [checkedIssueTypesMap, setCheckedIssueTypesMap] = useState({});
-    const [isIssueTypeAccordionOpen, setIsIssueTypeAccordionOpen] = useState(true);
+    const [isIssueTypeAccordionOpen, setIsIssueTypeAccordionOpen] = useState(false);
 
     const [jiraTagsList, setJiraTagsList] = useState([]);
     const [checkedJiraTagsMap, setCheckedJiraTagsMap] = useState({});
-    const [isTagAccordionOpen, setIsTagAccordionOpen] = useState(true);
+    const [isTagAccordionOpen, setIsTagAccordionOpen] = useState(false);
 
     const [jiraPrioritiesList, setJiraPrioritiesList] = useState([]);
     const [checkedPrioritiesMap, setCheckedPrioritiesMap] = useState({});
-    const [isPriorityAccordionOpen, setIsPriorityAccordionOpen] = useState(true);
+    const [isPriorityAccordionOpen, setIsPriorityAccordionOpen] = useState(false);
 
     const [jiraParents, setJiraParents] = useState([]);
     const [selectedParent, setSelectedParent] = useState('All');
@@ -310,7 +312,7 @@ export default function App() {
 
     const [outputReport, setOutputReport] = useState('');
     const [isPreviewOpen, setIsPreviewOpen] = useState(false);
-    const [isAccordionOpen, setIsAccordionOpen] = useState(true);
+    const [isAccordionOpen, setIsAccordionOpen] = useState(false);
     const [toasts, setToasts] = useState([]);
 
     const [formErrors, setFormErrors] = useState([]);
@@ -1432,11 +1434,11 @@ export default function App() {
             showToast("Missing required fields: " + errors.join(', '), 'error');
             if (errors.includes("Project Key") && projectKeyRef.current) projectKeyRef.current.focus();
             else if (errors.includes("Board ID") && boardIdRef.current) boardIdRef.current.focus();
+            else if (errors.includes("Sheet Tab Name") && sheetTabNameRef.current) sheetTabNameRef.current.focus();
+            else if (errors.includes("Report Name") && reportNameRef.current) reportNameRef.current.focus();
             else if (errors.includes("QC Team") && qcTeamRef.current) qcTeamRef.current.focus();
             else if (errors.includes("Game Version") && gameVersionRef.current) gameVersionRef.current.focus();
             else if (errors.includes("App Version") && appVersionRef.current) appVersionRef.current.focus();
-            else if (errors.includes("Sheet Tab Name") && sheetTabNameRef.current) sheetTabNameRef.current.focus();
-            else if (errors.includes("Report Name") && reportNameRef.current) reportNameRef.current.focus();
             return;
         }
 
@@ -2278,6 +2280,11 @@ export default function App() {
     };
 
     const statusPillList = Array.from(new Set(jiraStatuses.map(cleanStatusName)));
+    const selectedScopesCount = scopesList.filter(s => !!checkedScopesMap[s]).length;
+    const activeStatusCount = statusPillList.filter(s => !!checkedJiraB[s]).length;
+    const activeIssueTypesCount = jiraIssueTypesList.filter(t => !!checkedIssueTypesMap[t]).length;
+    const activePrioritiesCount = jiraPrioritiesList.filter(p => !!checkedPrioritiesMap[p]).length;
+    const activeTagsCount = jiraTagsList.filter(t => !!checkedJiraTagsMap[t]).length;
 
     const handleSwitchMode = (mode) => {
         setActiveTabMode(mode);
@@ -2285,212 +2292,216 @@ export default function App() {
     };
 
     return (
-        <div className="min-h-screen bg-slate-100 text-slate-800 font-sans p-6 pb-36">
-            <header className="w-full mb-6 flex flex-wrap justify-between items-center gap-4">
-                <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-2xl bg-indigo-50 border border-indigo-200 flex items-center justify-center shadow-sm">
-                        <svg className="w-6 h-6 text-indigo-600" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-                    </div>
-                    <div>
-                        <h1 className="text-lg font-extrabold text-slate-900 tracking-tight">QC Report Tool</h1>
-                        <p className="text-xs text-slate-500 font-medium">Internal Report Generator</p>
-                    </div>
-                </div>
-
-                <div className="bg-slate-200/80 p-1 rounded-xl flex items-center shadow-inner border border-slate-300 w-fit">
-                    <button
-                        type="button"
-                        onClick={() => handleSwitchMode('classic')}
-                        className={`relative px-4 py-2 rounded-lg text-xs font-bold transition-all duration-200 flex items-center gap-2 ${activeTabMode === 'classic' ? 'bg-white text-indigo-700 shadow-md ring-1 ring-slate-200/50' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-300/50'}`}
-                    >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h7" /></svg>
-                        Standard Flow
-                    </button>
-                    <button
-                        type="button"
-                        onClick={() => handleSwitchMode('hierarchy')}
-                        className={`relative px-4 py-2 rounded-lg text-xs font-bold transition-all duration-200 flex items-center gap-2 ${activeTabMode === 'hierarchy' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-300/50'}`}
-                    >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" /></svg>
-                        Tree Flow
-                    </button>
-                </div>
-
-                <div className="flex items-center gap-3">
-                    {workspaces.length > 0 && jiraToken && (
-                        <div className="relative flex items-center group">
-                            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                <svg className="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" /></svg>
-                            </div>
-                            <select 
-                                value={jiraCloudId || ''} 
-                                onChange={e => {
-                                    const newCloudId = e.target.value;
-                                    setJiraCloudId(newCloudId);
-                                    localStorage.setItem('jira_cloud_id', newCloudId);
-                                    setAvailableProjects([]);
-                                    setEpicOptions([]);
-                                    setEpicTasksList([]);
-                                    setSelectedEpicKey([]);
-                                    setSelectedTaskKey([]);
-                                    setJiraStatuses([]);
-                                    setJiraPrioritiesList([]);
-                                    setJiraTagsList([]);
-                                    setAuthTrigger(prev => prev + 1);
-                                    showToast("Switched Jira Workspace", 'success');
-                                }}
-                                className="h-10 pl-9 pr-10 bg-white hover:bg-indigo-50/50 border border-slate-200 hover:border-indigo-300 rounded-xl text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 cursor-pointer appearance-none shadow-sm transition-all"
-                                style={{ WebkitAppearance: 'none', MozAppearance: 'none' }}
-                            >
-                                {workspaces.map(ws => (
-                                    <option key={ws.id} value={ws.id}>
-                                        {ws.name} ({extractDomain(ws.url)})
-                                    </option>
-                                ))}
-                            </select>
-                            <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
-                                <svg className="w-4 h-4 text-slate-400 group-hover:text-indigo-500 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 9l4-4 4 4m0 6l-4 4-4-4" /></svg>
-                            </div>
+        <div className="min-h-screen bg-slate-100 text-slate-800 font-sans pb-32">
+            <header className="sticky top-0 z-30 bg-white/90 backdrop-blur-md border-b border-slate-200 px-6 py-3 shadow-sm">
+                <div className="max-w-[1600px] mx-auto flex flex-wrap justify-between items-center gap-4">
+                    <div className="flex items-center gap-3">
+                        <div className="w-9 h-9 rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-sm">
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
                         </div>
-                    )}
+                        <div>
+                            <h1 className="text-base font-extrabold text-slate-900 tracking-tight leading-tight">QC Report Tool</h1>
+                            <p className="text-[11px] text-slate-500 font-medium">Internal Report Generator</p>
+                        </div>
+                    </div>
 
-                    <div className="flex items-center gap-3 bg-white/90 border border-slate-200 px-3 py-1.5 rounded-xl backdrop-blur-md shadow-sm">
-                        <span className={`w-2.5 h-2.5 rounded-full ${jiraToken && jiraCloudId ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)]' : 'bg-slate-400'}`}></span>
-                        <span className="text-xs font-semibold text-slate-700 hidden sm:inline-block">
-                            {jiraToken && jiraCloudId ? "Jira Connected" : "Jira Disconnected"}
-                        </span>
-                        {jiraToken && jiraCloudId ? (
-                            <button onClick={handleJiraDisconnect} className="text-[11px] px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-lg border border-slate-300 transition-all">
-                                Disconnect
-                            </button>
-                        ) : (
-                            <button onClick={initiateJiraSSO} className="text-xs px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-md transition-all">
-                                Connect SSO
-                            </button>
+                    <div className="bg-slate-100 p-1 rounded-xl flex items-center border border-slate-200 w-fit">
+                        <button
+                            type="button"
+                            onClick={() => handleSwitchMode('classic')}
+                            className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 flex items-center gap-1.5 ${activeTabMode === 'classic' ? 'bg-white text-indigo-700 shadow-sm ring-1 ring-slate-200' : 'text-slate-500 hover:text-slate-800'}`}
+                        >
+                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h7" /></svg>
+                            Standard Flow
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => handleSwitchMode('hierarchy')}
+                            className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 flex items-center gap-1.5 ${activeTabMode === 'hierarchy' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
+                        >
+                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" /></svg>
+                            Tree Flow
+                        </button>
+                    </div>
+
+                    <div className="flex items-center gap-2.5">
+                        {workspaces.length > 0 && jiraToken && (
+                            <div className="relative flex items-center group">
+                                <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none">
+                                    <svg className="w-3.5 h-3.5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" /></svg>
+                                </div>
+                                <select 
+                                    value={jiraCloudId || ''} 
+                                    onChange={e => {
+                                        const newCloudId = e.target.value;
+                                        setJiraCloudId(newCloudId);
+                                        localStorage.setItem('jira_cloud_id', newCloudId);
+                                        setAvailableProjects([]);
+                                        setEpicOptions([]);
+                                        setEpicTasksList([]);
+                                        setSelectedEpicKey([]);
+                                        setSelectedTaskKey([]);
+                                        setJiraStatuses([]);
+                                        setJiraPrioritiesList([]);
+                                        setJiraTagsList([]);
+                                        setAuthTrigger(prev => prev + 1);
+                                        showToast("Switched Jira Workspace", 'success');
+                                    }}
+                                    className="h-9 pl-8 pr-8 bg-slate-50 hover:bg-indigo-50/50 border border-slate-200 hover:border-indigo-300 rounded-xl text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 cursor-pointer appearance-none transition-all"
+                                    style={{ WebkitAppearance: 'none', MozAppearance: 'none' }}
+                                >
+                                    {workspaces.map(ws => (
+                                        <option key={ws.id} value={ws.id}>
+                                            {ws.name} ({extractDomain(ws.url)})
+                                        </option>
+                                    ))}
+                                </select>
+                                <div className="absolute inset-y-0 right-0 pr-2.5 flex items-center pointer-events-none">
+                                    <svg className="w-3.5 h-3.5 text-slate-400 group-hover:text-indigo-500 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 9l4-4 4 4m0 6l-4 4-4-4" /></svg>
+                                </div>
+                            </div>
                         )}
+
+                        <div className="flex items-center gap-2.5 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-xl">
+                            <span className={`w-2 h-2 rounded-full ${jiraToken && jiraCloudId ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)]' : 'bg-slate-400'}`}></span>
+                            <span className="text-xs font-semibold text-slate-700 hidden sm:inline-block">
+                                {jiraToken && jiraCloudId ? "Jira Connected" : "Disconnected"}
+                            </span>
+                            {jiraToken && jiraCloudId ? (
+                                <button onClick={handleJiraDisconnect} className="text-[11px] px-2.5 py-1 bg-white hover:bg-slate-100 text-slate-700 font-semibold rounded-lg border border-slate-300 transition-all">
+                                    Disconnect
+                                </button>
+                            ) : (
+                                <button onClick={initiateJiraSSO} className="text-xs px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg shadow-sm transition-all">
+                                    Connect SSO
+                                </button>
+                            )}
+                        </div>
                     </div>
                 </div>
             </header>
 
-            <main className="w-full grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
-
-                <section className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm flex flex-col gap-4">
-                    <h2 className="text-sm font-bold text-slate-800 tracking-wide flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                            <span className="w-2 h-2 rounded-full bg-indigo-600"></span>
-                            <span>{activeTabMode === 'hierarchy' ? "Board & Epic/Task Tree" : "Project Details"}</span>
-                        </div>
-                        {activeTabMode === 'hierarchy' && (
-                            <span className="text-[10px] bg-indigo-100 text-indigo-700 font-bold px-2 py-0.5 rounded-md">Tree Mode</span>
-                        )}
-                    </h2>
-
-                    <div className="flex flex-col gap-1.5">
-                        <label className="text-xs font-semibold text-slate-600">1. Project Key (Board Project)</label>
-                        <div className="flex gap-2">
-                            <div className="flex-1">
-                                <SearchableDropdown 
-                                    ref={projectKeyRef}
-                                    options={availableProjects} 
-                                    value={sheetName} 
-                                    onChange={val => {
-                                        setSheetName(val);
-                                        setFormErrors(prev => prev.filter(err => err !== "Project Key"));
-                                    }} 
-                                    placeholder="Select Project Key (e.g. STR)..."
-                                    isError={formErrors.includes("Project Key")}
-                                />
+            <div className="max-w-[1600px] mx-auto px-6 pt-6 flex flex-col gap-6">
+                <main className="w-full grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+                    <section className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm flex flex-col gap-5">
+                        <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                            <div className="flex items-center gap-2.5">
+                                <span className="w-6 h-6 rounded-lg bg-indigo-50 text-indigo-600 text-xs font-extrabold flex items-center justify-center border border-indigo-100">1</span>
+                                <div>
+                                    <h2 className="text-sm font-bold text-slate-900">Data Sources</h2>
+                                    <p className="text-[11px] text-slate-400 font-medium">Jira Board & Google Sheet</p>
+                                </div>
                             </div>
-                            <button type="button" onClick={handleLoadStatuses} className="px-3.5 h-10 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-md transition-all flex items-center gap-1">
-                                <span>↻ Sync</span>
-                            </button>
-                        </div>
-                    </div>
-
-                    <div className="flex flex-col gap-1.5 bg-indigo-50/40 p-3 rounded-xl border border-indigo-100">
-                        <label className="text-xs font-bold text-indigo-900">Board ID <span className="text-rose-500">*</span></label>
-                        <div className="flex gap-2">
-                            <input
-                                ref={boardIdRef}
-                                type="text"
-                                value={selectedBoardId}
-                                onChange={e => {
-                                    setSelectedBoardId(e.target.value);
-                                    setFormErrors(prev => prev.filter(err => err !== "Board ID"));
-                                }}
-                                placeholder="Type or select Board ID..."
-                                className={`flex-1 h-10 px-3 bg-white border rounded-xl text-xs font-medium text-slate-800 focus:outline-none transition-colors ${formErrors.includes("Board ID") ? 'border-rose-500 ring-1 ring-rose-500' : 'border-slate-300 focus:border-indigo-600'}`}
-                            />
-                            {availableBoards.length > 0 && (
-                                <select
-                                    onChange={e => {
-                                        if (e.target.value) {
-                                            setSelectedBoardId(e.target.value);
-                                            setFormErrors(prev => prev.filter(err => err !== "Board ID"));
-                                        }
-                                    }}
-                                    className="w-10 h-10 bg-white border border-slate-300 rounded-xl text-xs text-slate-800 cursor-pointer outline-none focus:border-indigo-600"
-                                >
-                                    <option value="">▼</option>
-                                    {availableBoards.map(b => (
-                                        <option key={b.id} value={b.id}>{b.name} ({b.id})</option>
-                                    ))}
-                                </select>
+                            {activeTabMode === 'hierarchy' && (
+                                <span className="text-[10px] bg-indigo-50 text-indigo-700 border border-indigo-200 font-bold px-2 py-0.5 rounded-md">Tree Mode</span>
                             )}
                         </div>
-                    </div>
 
-                    {activeTabMode === 'hierarchy' ? (
-                        <div className="flex flex-col gap-3 p-3 bg-indigo-50/40 rounded-xl border border-indigo-100">
+                        <div className="flex flex-col gap-3.5">
                             <div className="flex flex-col gap-1.5">
-                                <div className="flex justify-between items-center">
-                                    <label className="text-xs font-bold text-indigo-900">2. Select Epic (Game)</label>
-                                    {isLoadingEpics && <span className="text-[10px] text-indigo-600 animate-pulse font-medium">Syncing Epics...</span>}
+                                <label className="text-xs font-semibold text-slate-700">Project Key <span className="text-rose-500">*</span></label>
+                                <div className="flex gap-2">
+                                    <div className="flex-1 min-w-0">
+                                        <SearchableDropdown 
+                                            ref={projectKeyRef}
+                                            options={availableProjects} 
+                                            value={sheetName} 
+                                            onChange={val => {
+                                                setSheetName(val);
+                                                setFormErrors(prev => prev.filter(err => err !== "Project Key"));
+                                            }} 
+                                            placeholder="Select Project Key (e.g. STR)..."
+                                            isError={formErrors.includes("Project Key")}
+                                        />
+                                    </div>
+                                    <button type="button" onClick={handleLoadStatuses} className="px-3 h-[38px] bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-sm transition-all flex items-center gap-1 shrink-0">
+                                        <span>↻ Sync</span>
+                                    </button>
                                 </div>
-                                <SearchableDropdown
-                                    isMulti={true}
-                                    options={epicOptions}
-                                    value={selectedEpicKey}
-                                    onChange={handleEpicSelect}
-                                    placeholder={isLoadingEpics ? "Syncing Epics..." : "Select Epic..."}
-                                />
                             </div>
 
                             <div className="flex flex-col gap-1.5">
-                                <div className="flex justify-between items-center">
-                                    <label className="text-xs font-bold text-indigo-900">3. Target Task ([QC] Bugs List)</label>
-                                    {isLoadingTasks && <span className="text-[10px] text-indigo-600 animate-pulse font-medium">Loading Tasks...</span>}
+                                <label className="text-xs font-semibold text-slate-700">Board ID <span className="text-rose-500">*</span></label>
+                                <div className="flex gap-2">
+                                    <input
+                                        ref={boardIdRef}
+                                        type="text"
+                                        value={selectedBoardId}
+                                        onChange={e => {
+                                            setSelectedBoardId(e.target.value);
+                                            setFormErrors(prev => prev.filter(err => err !== "Board ID"));
+                                        }}
+                                        placeholder="Type or select Board ID..."
+                                        className={`flex-1 h-[38px] px-3 bg-slate-50 border rounded-xl text-xs font-medium text-slate-800 focus:bg-white focus:outline-none transition-colors ${formErrors.includes("Board ID") ? 'border-rose-500 ring-1 ring-rose-500' : 'border-slate-300 focus:border-indigo-600'}`}
+                                    />
+                                    {availableBoards.length > 0 && (
+                                        <select
+                                            onChange={e => {
+                                                if (e.target.value) {
+                                                    setSelectedBoardId(e.target.value);
+                                                    setFormErrors(prev => prev.filter(err => err !== "Board ID"));
+                                                }
+                                            }}
+                                            className="w-10 h-[38px] bg-white border border-slate-300 rounded-xl text-xs text-slate-800 cursor-pointer outline-none focus:border-indigo-600 shrink-0"
+                                        >
+                                            <option value="">▼</option>
+                                            {availableBoards.map(b => (
+                                                <option key={b.id} value={b.id}>{b.name} ({b.id})</option>
+                                            ))}
+                                        </select>
+                                    )}
                                 </div>
-                                <SearchableDropdown
-                                    isMulti={true}
-                                    options={epicTasksList}
-                                    value={selectedTaskKey}
-                                    onChange={val => {
-                                        setSelectedTaskKey(val);
-                                        syncSubTaskMetadata(val);
-                                    }}
-                                    placeholder={isLoadingTasks ? "Loading tasks..." : "Select Task (Default [QC] Bugs List)..."}
-                                    isError={formErrors.includes("Target Task / [QC] Bugs List")}
-                                />
                             </div>
-                        </div>
-                    ) : (
-                        <div className="flex flex-col gap-3">
-                            <div className="flex flex-col gap-1.5">
-                                <label className="text-xs font-semibold text-slate-600">Epic Filter</label>
-                                <select value={selectedParent} onChange={e => setSelectedParent(e.target.value)} className="h-10 px-3 bg-slate-50 border border-slate-300 rounded-xl text-xs font-medium text-slate-800 focus:outline-none focus:border-indigo-600">
-                                    <option value="All">Default</option>
-                                    {jiraParents.map(p => <option key={p.key} value={p.key}>{p.name} ({p.key})</option>)}
-                                </select>
-                            </div>
-                        </div>
-                    )}
 
-                    <div className="grid grid-cols-2 gap-3">
-                        <div className="flex flex-col gap-1.5">
-                            <label className="text-xs font-semibold text-slate-600">Sheet Tab Name</label>
+                            {activeTabMode === 'hierarchy' ? (
+                                <div className="flex flex-col gap-3 p-3.5 bg-indigo-50/50 rounded-xl border border-indigo-100">
+                                    <div className="flex flex-col gap-1.5">
+                                        <div className="flex justify-between items-center">
+                                            <label className="text-xs font-bold text-indigo-900">Select Epic (Game)</label>
+                                            {isLoadingEpics && <span className="text-[10px] text-indigo-600 animate-pulse font-semibold">Syncing...</span>}
+                                        </div>
+                                        <SearchableDropdown
+                                            isMulti={true}
+                                            options={epicOptions}
+                                            value={selectedEpicKey}
+                                            onChange={handleEpicSelect}
+                                            placeholder={isLoadingEpics ? "Syncing Epics..." : "Select Epic..."}
+                                        />
+                                    </div>
+
+                                    <div className="flex flex-col gap-1.5">
+                                        <div className="flex justify-between items-center">
+                                            <label className="text-xs font-bold text-indigo-900">Target Task ([QC] Bugs List) <span className="text-rose-500">*</span></label>
+                                            {isLoadingTasks && <span className="text-[10px] text-indigo-600 animate-pulse font-semibold">Loading...</span>}
+                                        </div>
+                                        <SearchableDropdown
+                                            isMulti={true}
+                                            options={epicTasksList}
+                                            value={selectedTaskKey}
+                                            onChange={val => {
+                                                setSelectedTaskKey(val);
+                                                syncSubTaskMetadata(val);
+                                            }}
+                                            placeholder={isLoadingTasks ? "Loading tasks..." : "Select Task (Default [QC] Bugs List)..."}
+                                            isError={formErrors.includes("Target Task / [QC] Bugs List")}
+                                        />
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="flex flex-col gap-1.5">
+                                    <label className="text-xs font-semibold text-slate-700">Epic Filter</label>
+                                    <select value={selectedParent} onChange={e => setSelectedParent(e.target.value)} className="h-[38px] px-3 bg-slate-50 border border-slate-300 rounded-xl text-xs font-medium text-slate-800 focus:bg-white focus:outline-none focus:border-indigo-600">
+                                        <option value="All">All Epics (Default)</option>
+                                        {jiraParents.map(p => <option key={p.key} value={p.key}>{p.name} ({p.key})</option>)}
+                                    </select>
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="pt-4 border-t border-slate-100 flex flex-col gap-1.5">
+                            <label className="text-xs font-semibold text-slate-700">Google Sheet Tab <span className="text-rose-500">*</span></label>
                             <div className="flex gap-2">
-                                <div className="flex-1">
+                                <div className="flex-1 min-w-0">
                                     <SearchableDropdown 
                                         isMulti={true}
                                         ref={sheetTabNameRef}
@@ -2500,471 +2511,521 @@ export default function App() {
                                             setSheetTabName(val);
                                             setFormErrors(prev => prev.filter(err => err !== "Sheet Tab Name"));
                                         }} 
-                                        placeholder="Select Tab..."
+                                        placeholder="Select Sheet Tab..."
                                         isError={formErrors.includes("Sheet Tab Name")}
                                     />
                                 </div>
-                                <button type="button" onClick={handleLoadTabs} className="px-3.5 h-10 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 text-xs font-bold rounded-xl shadow-sm transition-all flex items-center justify-center">
+                                <button type="button" onClick={handleLoadTabs} className="px-3 h-[38px] bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 text-xs font-bold rounded-xl transition-all flex items-center justify-center shrink-0">
                                     <span>↻ Load</span>
                                 </button>
                             </div>
                         </div>
+                    </section>
 
-                        <div className="flex flex-col gap-1.5">
-                            <label className="text-xs font-semibold text-slate-600">Report Date</label>
-                            <input type="date" value={dateReport} onChange={e => setDateReport(e.target.value)} className="w-full h-10 px-3 bg-slate-50 border border-slate-300 rounded-xl text-xs font-medium text-slate-800 focus:outline-none focus:border-indigo-600" />
-                        </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-3">
-                        <div className="flex flex-col gap-1.5">
-                            <label className="text-xs font-semibold text-slate-600">Report Name <span className="text-rose-500">*</span></label>
-                            <input 
-                                ref={reportNameRef}
-                                type="text" 
-                                value={customReportName} 
-                                onChange={e => {
-                                    setCustomReportName(e.target.value);
-                                    setFormErrors(prev => prev.filter(err => err !== "Report Name"));
-                                }} 
-                                placeholder="Id - Game Name" 
-                                className={`w-full h-10 px-3 bg-slate-50 border rounded-xl text-xs font-medium text-slate-800 focus:outline-none transition-colors ${formErrors.includes("Report Name") ? 'border-rose-500 ring-1 ring-rose-500' : 'border-slate-300 focus:border-indigo-600'}`} 
-                            />
-                        </div>
-                        <div className="flex flex-col gap-1.5">
-                            <label className="text-xs font-semibold text-slate-600">Testing Status</label>
-                            <input type="text" value={testingStatus} onChange={e => setTestingStatus(e.target.value)} placeholder="In-testing..." className="h-10 px-3.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-medium text-slate-800 focus:outline-none focus:border-indigo-600" />
-                        </div>
-                    </div>
-
-                    <div className="flex flex-col gap-1.5">
-                        <label className="text-xs font-semibold text-slate-600">QC Team</label>
-                        <div className="relative">
-                            <input
-                                ref={qcTeamRef}
-                                type="text"
-                                value={qcNames}
-                                onChange={e => {
-                                    setQcNames(e.target.value);
-                                    setFormErrors(prev => prev.filter(err => err !== "QC Team"));
-                                }}
-                                placeholder="Victor, Anna..."
-                                className={`w-full h-10 pl-9 pr-3.5 bg-slate-50 border rounded-xl text-xs font-medium text-slate-900 placeholder-slate-400 focus:outline-none transition-colors ${formErrors.includes("QC Team") ? 'border-rose-500' : 'border-slate-300 focus:border-indigo-600'}`}
-                            />
-                            <svg className={`w-4 h-4 absolute left-3 top-3 ${formErrors.includes("QC Team") ? 'text-rose-500' : 'text-slate-400'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
-                        </div>
-                    </div>
-
-                    <div className="bg-slate-50 border border-slate-200 rounded-xl overflow-hidden mt-1">
-                        <button type="button" onClick={() => setIsAccordionOpen(!isAccordionOpen)} className="w-full px-4 py-3 flex items-center justify-between text-xs font-bold text-slate-700 hover:bg-slate-100 transition-all">
-                            <span>Jira Status Settings</span>
-                            <span className="text-slate-400">{isAccordionOpen ? '▲' : '▼'}</span>
-                        </button>
-
-                        {isAccordionOpen && (
-                            <div className="p-3 border-t border-slate-200 bg-slate-50">
-                                {statusPillList.length === 0 ? (
-                                    <div className="p-4 text-center text-xs text-slate-400 italic">
-                                        No status available. Please select a Project Key and click <strong>↻ Sync</strong>.
-                                    </div>
-                                ) : (
-                                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                                        <div className="flex flex-col gap-2">
-                                            <div className="flex justify-between items-center">
-                                                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-tight">Count</span>
-                                                <div className="flex gap-1 text-[9px]">
-                                                    <button type="button" onClick={() => toggleAllJiraCategory('B', true)} className="text-indigo-600 hover:underline font-bold">All</button>
-                                                    <span className="text-slate-300">|</span>
-                                                    <button type="button" onClick={() => toggleAllJiraCategory('B', false)} className="text-slate-500 hover:underline">None</button>
-                                                </div>
-                                            </div>
-                                            {statusPillList.map(s => { 
-                                                const isChecked = !!checkedJiraB[s];
-                                                return (
-                                                    <div key={s} onClick={() => setCheckedJiraB(p => ({ ...p, [s]: !isChecked }))} className={`px-2 py-1 rounded-lg border flex items-center justify-between cursor-pointer transition-all ${isChecked ? 'bg-indigo-50 border-indigo-300 text-indigo-700' : 'bg-white border-slate-200 text-slate-600'}`}>
-                                                        <span className="text-[10px] font-semibold truncate">{s}</span>
-                                                        <span className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center text-[8px] font-bold ${isChecked ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white border-slate-300'}`}>{isChecked ? '✓' : ''}</span>
-                                                    </div>
-                                                );
-                                            })}
-                                        </div>
-
-                                        <div className="flex flex-col gap-2">
-                                            <div className="flex justify-between items-center">
-                                                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-tight">Unverified</span>
-                                                <div className="flex gap-1 text-[9px]">
-                                                    <button type="button" onClick={() => toggleAllJiraCategory('Unverified', true)} className="text-amber-600 hover:underline font-bold">All</button>
-                                                    <span className="text-slate-300">|</span>
-                                                    <button type="button" onClick={() => toggleAllJiraCategory('Unverified', false)} className="text-slate-500 hover:underline">None</button>
-                                                </div>
-                                            </div>
-                                            {statusPillList.map(s => {
-                                                const isChecked = !!checkedJiraUnverified[s];
-                                                return (
-                                                    <div key={s} onClick={() => setCheckedJiraUnverified(p => ({ ...p, [s]: !isChecked }))} className={`px-2 py-1 rounded-lg border flex items-center justify-between cursor-pointer transition-all ${isChecked ? 'bg-amber-50 border-amber-300 text-amber-800' : 'bg-white border-slate-200 text-slate-600'}`}>
-                                                        <span className="text-[10px] font-semibold truncate">{s}</span>
-                                                        <span className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center text-[8px] font-bold ${isChecked ? 'bg-amber-500 text-white border-amber-500' : 'bg-white border-slate-300'}`}>{isChecked ? '✓' : ''}</span>
-                                                    </div>
-                                                );
-                                            })}
-                                        </div>
-
-                                        <div className="flex flex-col gap-2">
-                                            <div className="flex justify-between items-center">
-                                                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-tight">Pending</span>
-                                                <div className="flex gap-1 text-[9px]">
-                                                    <button type="button" onClick={() => toggleAllJiraCategory('Pending', true)} className="text-indigo-600 hover:underline font-bold">All</button>
-                                                    <span className="text-slate-300">|</span>
-                                                    <button type="button" onClick={() => toggleAllJiraCategory('Pending', false)} className="text-slate-500 hover:underline">None</button>
-                                                </div>
-                                            </div>
-                                            {statusPillList.map(s => {
-                                                const isChecked = !!checkedJiraPending[s];
-                                                return (
-                                                    <div key={s} onClick={() => setCheckedJiraPending(p => ({ ...p, [s]: !isChecked }))} className={`px-2 py-1 rounded-lg border flex items-center justify-between cursor-pointer transition-all ${isChecked ? 'bg-indigo-50 border-indigo-300 text-indigo-700' : 'bg-white border-slate-200 text-slate-600'}`}>
-                                                        <span className="text-[10px] font-semibold truncate">{s}</span>
-                                                        <span className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center text-[8px] font-bold ${isChecked ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white border-slate-300'}`}>{isChecked ? '✓' : ''}</span>
-                                                    </div>
-                                                );
-                                            })}
-                                        </div>
-                                    </div>
-                                )}
+                    <section className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm flex flex-col gap-5">
+                        <div className="flex items-center gap-2.5 pb-3 border-b border-slate-100">
+                            <span className="w-6 h-6 rounded-lg bg-indigo-50 text-indigo-600 text-xs font-extrabold flex items-center justify-center border border-indigo-100">2</span>
+                            <div>
+                                <h2 className="text-sm font-bold text-slate-900">Report & Environments</h2>
+                                <p className="text-[11px] text-slate-400 font-medium">Metadata, Versions, Links & Notes</p>
                             </div>
-                        )}
-                    </div>
-                </section>
-
-                <section className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm flex flex-col gap-4">
-                    <h2 className="text-sm font-bold text-slate-800 tracking-wide flex items-center gap-2">
-                        <span className="w-2 h-2 rounded-full bg-indigo-600"></span>
-                        <span>Environments & Links</span>
-                    </h2>
-
-                    <div className="grid grid-cols-2 gap-3">
-                        <div className="flex flex-col gap-1.5">
-                            <label className="text-xs font-semibold text-slate-600">Game Version</label>
-                            <input
-                                ref={gameVersionRef}
-                                type="text"
-                                value={versionGame}
-                                onChange={e => {
-                                    setVersionGame(e.target.value);
-                                    setFormErrors(prev => prev.filter(err => err !== "Game Version"));
-                                }}
-                                placeholder="1.0.0"
-                                className={`h-10 px-3.5 bg-slate-50 border rounded-xl text-xs font-medium text-slate-900 placeholder-slate-400 focus:outline-none transition-colors ${formErrors.includes("Game Version") ? 'border-rose-500' : 'border-slate-300 focus:border-indigo-600'}`}
-                            />
                         </div>
 
-                        <div className="flex flex-col gap-1.5">
-                            <label className="text-xs font-semibold text-slate-600">Version Date</label>
-                            <input type="date" value={dateGame} onChange={e => setDateGame(e.target.value)} className="h-10 px-3 bg-slate-50 border border-slate-300 rounded-xl text-xs font-medium text-slate-800 focus:outline-none focus:border-indigo-600" />
-                        </div>
-
-                        <div className="flex flex-col gap-1.5">
-                            <label className="text-xs font-semibold text-slate-600">App Version</label>
-                            <input
-                                ref={appVersionRef}
-                                type="text"
-                                value={versionApp}
-                                onChange={e => {
-                                    setVersionApp(e.target.value);
-                                    setFormErrors(prev => prev.filter(err => err !== "App Version"));
-                                }}
-                                placeholder="3.41.790"
-                                className={`h-10 px-3.5 bg-slate-50 border rounded-xl text-xs font-medium text-slate-900 placeholder-slate-400 focus:outline-none transition-colors ${formErrors.includes("App Version") ? 'border-rose-500' : 'border-slate-300 focus:border-indigo-600'}`}
-                            />
-                        </div>
-                    </div>
-
-                    <div className="flex flex-col gap-1.5">
-                        <label className="text-xs font-semibold text-slate-600">Platforms</label>
-                        <div className="flex flex-wrap gap-2 pt-1">
-                            <button type="button" onClick={() => setChkWebapp(!chkWebapp)} className={`px-4 py-1.5 rounded-xl text-xs font-bold border transition-all ${chkWebapp ? 'bg-indigo-100 border-indigo-500 text-indigo-700' : 'bg-slate-50 border-slate-300 text-slate-600 hover:border-slate-400'}`}>Webapp</button>
-                            <button type="button" onClick={() => setChkApptek(!chkApptek)} className={`px-4 py-1.5 rounded-xl text-xs font-bold border transition-all ${chkApptek ? 'bg-indigo-100 border-indigo-500 text-indigo-700' : 'bg-slate-50 border-slate-300 text-slate-600 hover:border-slate-400'}`}>App</button>
-                            <button type="button" onClick={() => setChkPreprod(!chkPreprod)} className={`px-4 py-1.5 rounded-xl text-xs font-bold border transition-all ${chkPreprod ? 'bg-indigo-100 border-indigo-500 text-indigo-700' : 'bg-slate-50 border-slate-300 text-slate-600 hover:border-slate-400'}`}>Preprod</button>
-                            <button type="button" onClick={() => setChkCustomIframe(!chkCustomIframe)} className={`px-4 py-1.5 rounded-xl text-xs font-bold border transition-all ${chkCustomIframe ? 'bg-indigo-100 border-indigo-500 text-indigo-700' : 'bg-slate-50 border-slate-300 text-slate-600 hover:border-slate-400'}`}>Custom Iframe</button>
-                        </div>
-                    </div>
-
-                    {(chkWebapp || chkApptek) && (
-                        <div className="flex flex-col gap-1.5">
-                            <label className="text-xs font-semibold text-slate-600">Webapp/App Link or ID</label>
-                            <input type="text" value={linkShared} onChange={e => setLinkShared(e.target.value)} placeholder="Internal server number (e.g. 8) or URL..." className="w-full h-10 px-3.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-medium text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-600" />
-                        </div>
-                    )}
-
-                    {chkPreprod && (
-                        <div className="flex flex-col gap-1.5">
-                            <label className="text-xs font-semibold text-slate-600">Preprod Link</label>
-                            <textarea 
-                                value={linkPreprod} 
-                                onChange={e => setLinkPreprod(e.target.value)} 
-                                ref={el => { if (el) { el.style.height = "auto"; el.style.height = el.scrollHeight + "px"; } }}
-                                placeholder="Preprod - Custom:&#10;KM: https://...&#10;EN: https://..." 
-                                rows="2" 
-                                className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-medium text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-600 overflow-hidden resize-none" 
-                            />
-                        </div>
-                    )}
-
-                    {chkCustomIframe && (
-                        <div className="flex flex-col gap-1.5 pt-3 border-t border-slate-200 mt-1">
-                            <label className="text-xs font-semibold text-slate-600">Custom Iframes</label>
-                            <textarea 
-                                value={customIframesData} 
-                                onChange={e => setCustomIframesData(e.target.value)} 
-                                ref={el => { if (el) { el.style.height = "auto"; el.style.height = el.scrollHeight + "px"; } }}
-                                placeholder="Iframe - Custom Staging:&#10;KM: https://...&#10;EN: https://..." 
-                                rows="2" 
-                                className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-medium text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-600 overflow-hidden resize-none" 
-                            />
-                        </div>
-                    )}
-
-                    <div className="flex flex-col gap-2 pt-3 border-t border-slate-200 mt-1">
-                        <div className="flex justify-between items-center">
-                            <label className="text-xs font-semibold text-slate-600">Custom Notes</label>
-                            <button type="button" onClick={handleAddNote} className="text-xs font-bold text-indigo-600 hover:text-indigo-700 flex items-center gap-1">+ Add Note</button>
-                        </div>
-                        {customNotesData.map((noteText, idx) => (
-                            <div key={idx} className="flex gap-2 items-start">
-                                <textarea 
-                                    value={noteText} 
-                                    onChange={e => handleNoteChange(idx, e.target.value)} 
-                                    ref={el => { if (el) { el.style.height = "auto"; el.style.height = el.scrollHeight + "px"; } }}
-                                    placeholder="Custom notes..." 
-                                    rows="2" 
-                                    className="flex-1 p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-medium text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-600 overflow-hidden resize-none" 
-                                />
-                                <button type="button" onClick={() => handleNoteDelete(idx)} className="p-2 text-rose-500 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all mt-1">
-                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                                </button>
-                            </div>
-                        ))}
-                    </div>
-                </section>
-
-                <section className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm flex flex-col gap-4">
-                    <div className="flex justify-between items-center">
-                        <h2 className="text-sm font-bold text-slate-800 tracking-wide flex items-center gap-2">
-                            <span className="w-2 h-2 rounded-full bg-indigo-600"></span>
-                            <span>Scope of Testing</span>
-                        </h2>
-                        <div className="flex gap-2 text-xs">
-                            <button type="button" onClick={() => toggleAllScopes(true)} className="text-indigo-600 hover:underline font-bold">Select All</button>
-                            <span className="text-slate-300">|</span>
-                            <button type="button" onClick={() => toggleAllScopes(false)} className="text-slate-500 hover:underline">Deselect All</button>
-                        </div>
-                    </div>
-
-                    <div className="flex gap-2">
-                        <input type="text" value={newScopeInput} onChange={e => setNewScopeInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleAddScope()} placeholder="Add custom scope..." className="flex-1 h-9 px-3 bg-slate-50 border border-slate-300 rounded-xl text-xs font-medium text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-600" />
-                        <button type="button" onClick={handleAddScope} className="px-3 h-9 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl border border-slate-300 transition-all">+ Add</button>
-                    </div>
-
-                    <div className="flex flex-wrap gap-2 max-h-[220px] overflow-y-auto pr-1">
-                        {scopesList.map(scope => {
-                            const isChecked = !!checkedScopesMap[scope];
-                            return (
-                                <div key={scope} className={`group flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-bold cursor-pointer transition-all ${isChecked ? 'bg-indigo-50 border-indigo-400 text-indigo-700 shadow-sm' : 'bg-slate-50 border-slate-200 text-slate-600 hover:border-slate-300'}`}>
-                                    <span onClick={() => setCheckedScopesMap(p => ({ ...p, [scope]: !isChecked }))} className="flex items-center gap-1.5">
-                                        <span className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center text-[8px] font-bold ${isChecked ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white border-slate-300'}`}>{isChecked ? '✓' : ''}</span>
-                                        <span>{scope}</span>
-                                    </span>
-                                    {!DEFAULT_SCOPES.includes(scope) && (
-                                        <button type="button" onClick={(e) => { e.stopPropagation(); handleDeleteScope(scope); }} className="text-slate-400 hover:text-rose-500 ml-1">✕</button>
-                                    )}
+                        <div className="flex flex-col gap-3.5">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <div className="flex flex-col gap-1.5">
+                                    <label className="text-xs font-semibold text-slate-700">Report Name <span className="text-rose-500">*</span></label>
+                                    <input 
+                                        ref={reportNameRef}
+                                        type="text" 
+                                        value={customReportName} 
+                                        onChange={e => {
+                                            setCustomReportName(e.target.value);
+                                            setFormErrors(prev => prev.filter(err => err !== "Report Name"));
+                                        }} 
+                                        placeholder="Id - Game Name" 
+                                        className={`w-full h-[38px] px-3 bg-slate-50 border rounded-xl text-xs font-medium text-slate-900 focus:bg-white focus:outline-none transition-colors ${formErrors.includes("Report Name") ? 'border-rose-500 ring-1 ring-rose-500' : 'border-slate-300 focus:border-indigo-600'}`} 
+                                    />
                                 </div>
-                            );
-                        })}
-                    </div>
-                    
-                    {jiraIssueTypesList.length > 0 && (
-                        <div className="bg-slate-50 border border-slate-200 rounded-xl overflow-hidden mt-1">
-                            <button type="button" onClick={() => setIsIssueTypeAccordionOpen(!isIssueTypeAccordionOpen)} className="w-full px-4 py-3 flex items-center justify-between text-xs font-bold text-slate-700 hover:bg-slate-100 transition-all">
-                                <span>Filter Types / Worktypes</span>
-                                <span className="text-slate-400">{isIssueTypeAccordionOpen ? '▲' : '▼'}</span>
-                            </button>
+                                <div className="flex flex-col gap-1.5">
+                                    <label className="text-xs font-semibold text-slate-700">Report Date</label>
+                                    <input type="date" value={dateReport} onChange={e => setDateReport(e.target.value)} className="w-full h-[38px] px-3 bg-slate-50 border border-slate-300 rounded-xl text-xs font-medium text-slate-800 focus:bg-white focus:outline-none focus:border-indigo-600" />
+                                </div>
+                            </div>
 
-                            {isIssueTypeAccordionOpen && (
-                                <div className="p-3 border-t border-slate-200 bg-slate-50">
-                                    <div className="flex justify-between items-center mb-2">
-                                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-tight">Select Types to Include</span>
-                                        <div className="flex gap-1 text-[9px]">
-                                            <button type="button" onClick={() => toggleAllIssueTypes(true)} className="text-indigo-600 hover:underline font-bold">All</button>
-                                            <span className="text-slate-300">|</span>
-                                            <button type="button" onClick={() => toggleAllIssueTypes(false)} className="text-slate-500 hover:underline">None</button>
-                                        </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <div className="flex flex-col gap-1.5">
+                                    <label className="text-xs font-semibold text-slate-700">QC Team <span className="text-rose-500">*</span></label>
+                                    <input
+                                        ref={qcTeamRef}
+                                        type="text"
+                                        value={qcNames}
+                                        onChange={e => {
+                                            setQcNames(e.target.value);
+                                            setFormErrors(prev => prev.filter(err => err !== "QC Team"));
+                                        }}
+                                        placeholder="Victor, Anna..."
+                                        className={`w-full h-[38px] px-3 bg-slate-50 border rounded-xl text-xs font-medium text-slate-900 placeholder-slate-400 focus:bg-white focus:outline-none transition-colors ${formErrors.includes("QC Team") ? 'border-rose-500 ring-1 ring-rose-500' : 'border-slate-300 focus:border-indigo-600'}`}
+                                    />
+                                </div>
+                                <div className="flex flex-col gap-1.5">
+                                    <label className="text-xs font-semibold text-slate-700">Testing Status</label>
+                                    <input type="text" value={testingStatus} onChange={e => setTestingStatus(e.target.value)} placeholder="In-testing..." className="w-full h-[38px] px-3 bg-slate-50 border border-slate-300 rounded-xl text-xs font-medium text-slate-800 focus:bg-white focus:outline-none focus:border-indigo-600" />
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="pt-4 border-t border-slate-100 flex flex-col gap-3.5">
+                            <div className="grid grid-cols-2 gap-3">
+                                <div className="flex flex-col gap-1.5">
+                                    <label className="text-xs font-semibold text-slate-700">Game Version <span className="text-rose-500">*</span></label>
+                                    <input
+                                        ref={gameVersionRef}
+                                        type="text"
+                                        value={versionGame}
+                                        onChange={e => {
+                                            setVersionGame(e.target.value);
+                                            setFormErrors(prev => prev.filter(err => err !== "Game Version"));
+                                        }}
+                                        placeholder="1.0.0"
+                                        className={`h-[38px] px-3 bg-slate-50 border rounded-xl text-xs font-medium text-slate-900 placeholder-slate-400 focus:bg-white focus:outline-none transition-colors ${formErrors.includes("Game Version") ? 'border-rose-500 ring-1 ring-rose-500' : 'border-slate-300 focus:border-indigo-600'}`}
+                                    />
+                                </div>
+
+                                <div className="flex flex-col gap-1.5">
+                                    <label className="text-xs font-semibold text-slate-700">Version Date</label>
+                                    <input type="date" value={dateGame} onChange={e => setDateGame(e.target.value)} className="h-[38px] px-3 bg-slate-50 border border-slate-300 rounded-xl text-xs font-medium text-slate-800 focus:bg-white focus:outline-none focus:border-indigo-600" />
+                                </div>
+                            </div>
+
+                            <div className="flex flex-col gap-1.5">
+                                <label className="text-xs font-semibold text-slate-700">Platforms & Links</label>
+                                <div className="flex flex-wrap gap-2">
+                                    <button type="button" onClick={() => setChkWebapp(!chkWebapp)} className={`px-3.5 py-1.5 rounded-xl text-xs font-bold border transition-all ${chkWebapp ? 'bg-indigo-50 border-indigo-500 text-indigo-700 shadow-sm' : 'bg-slate-50 border-slate-300 text-slate-600 hover:border-slate-400'}`}>Webapp</button>
+                                    <button type="button" onClick={() => setChkApptek(!chkApptek)} className={`px-3.5 py-1.5 rounded-xl text-xs font-bold border transition-all ${chkApptek ? 'bg-indigo-50 border-indigo-500 text-indigo-700 shadow-sm' : 'bg-slate-50 border-slate-300 text-slate-600 hover:border-slate-400'}`}>App</button>
+                                    <button type="button" onClick={() => setChkPreprod(!chkPreprod)} className={`px-3.5 py-1.5 rounded-xl text-xs font-bold border transition-all ${chkPreprod ? 'bg-indigo-50 border-indigo-500 text-indigo-700 shadow-sm' : 'bg-slate-50 border-slate-300 text-slate-600 hover:border-slate-400'}`}>Preprod</button>
+                                    <button type="button" onClick={() => setChkCustomIframe(!chkCustomIframe)} className={`px-3.5 py-1.5 rounded-xl text-xs font-bold border transition-all ${chkCustomIframe ? 'bg-indigo-50 border-indigo-500 text-indigo-700 shadow-sm' : 'bg-slate-50 border-slate-300 text-slate-600 hover:border-slate-400'}`}>Custom Iframe</button>
+                                </div>
+                            </div>
+
+                            {(chkWebapp || chkApptek) && (
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 bg-slate-50 rounded-xl border border-slate-200">
+                                    <div className="flex flex-col gap-1.5">
+                                        <label className="text-xs font-semibold text-slate-700">App Version <span className="text-rose-500">*</span></label>
+                                        <input
+                                            ref={appVersionRef}
+                                            type="text"
+                                            value={versionApp}
+                                            onChange={e => {
+                                                setVersionApp(e.target.value);
+                                                setFormErrors(prev => prev.filter(err => err !== "App Version"));
+                                            }}
+                                            placeholder="3.41.790"
+                                            className={`h-[38px] px-3 bg-white border rounded-xl text-xs font-medium text-slate-900 placeholder-slate-400 focus:outline-none transition-colors ${formErrors.includes("App Version") ? 'border-rose-500 ring-1 ring-rose-500' : 'border-slate-300 focus:border-indigo-600'}`}
+                                        />
                                     </div>
-                                    <div className="flex flex-wrap gap-2 max-h-36 overflow-y-auto">
-                                        {jiraIssueTypesList.map(type => {
-                                            const isChecked = !!checkedIssueTypesMap[type];
-                                            return (
-                                                <div key={type} onClick={() => setCheckedIssueTypesMap(p => ({ ...p, [type]: !isChecked }))} className={`px-2.5 py-1.5 rounded-lg border flex items-center gap-1.5 cursor-pointer transition-all ${isChecked ? 'bg-indigo-50 border-indigo-300 text-indigo-700' : 'bg-white border-slate-200 text-slate-600'}`}>
-                                                    <span className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center text-[8px] font-bold ${isChecked ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white border-slate-300'}`}>{isChecked ? '✓' : ''}</span>
-                                                    <span className="text-[10px] font-semibold">{type}</span>
-                                                </div>
-                                            );
-                                        })}
+                                    <div className="flex flex-col gap-1.5">
+                                        <label className="text-xs font-semibold text-slate-700">Webapp / App Link or ID</label>
+                                        <input type="text" value={linkShared} onChange={e => setLinkShared(e.target.value)} placeholder="Server number (e.g. 8) or URL..." className="w-full h-[38px] px-3 bg-white border border-slate-300 rounded-xl text-xs font-medium text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-600" />
                                     </div>
                                 </div>
                             )}
-                        </div>
-                    )}
 
-                    {jiraPrioritiesList.length > 0 && (
-                        <div className="bg-slate-50 border border-slate-200 rounded-xl overflow-hidden mt-1">
-                            <button type="button" onClick={() => setIsPriorityAccordionOpen(!isPriorityAccordionOpen)} className="w-full px-4 py-3 flex items-center justify-between text-xs font-bold text-slate-700 hover:bg-slate-100 transition-all">
-                                <span>Filter Priorities (Workspace)</span>
-                                <span className="text-slate-400">{isPriorityAccordionOpen ? '▲' : '▼'}</span>
-                            </button>
+                            {chkPreprod && (
+                                <div className="flex flex-col gap-1.5">
+                                    <label className="text-xs font-semibold text-slate-700">Preprod Link</label>
+                                    <textarea 
+                                        value={linkPreprod} 
+                                        onChange={e => setLinkPreprod(e.target.value)} 
+                                        ref={el => { if (el) { el.style.height = "auto"; el.style.height = el.scrollHeight + "px"; } }}
+                                        placeholder="Preprod - Custom:&#10;KM: https://...&#10;EN: https://..." 
+                                        rows="2" 
+                                        className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-medium text-slate-900 placeholder-slate-400 focus:bg-white focus:outline-none focus:border-indigo-600 overflow-hidden resize-none" 
+                                    />
+                                </div>
+                            )}
 
-                            {isPriorityAccordionOpen && (
-                                <div className="p-3 border-t border-slate-200 bg-slate-50">
-                                    <div className="flex justify-between items-center mb-2">
-                                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-tight">Select Priorities to Include</span>
-                                        <div className="flex gap-1 text-[9px]">
-                                            <button type="button" onClick={() => toggleAllPriorities(true)} className="text-indigo-600 hover:underline font-bold">All</button>
-                                            <span className="text-slate-300">|</span>
-                                            <button type="button" onClick={() => toggleAllPriorities(false)} className="text-slate-500 hover:underline">None</button>
-                                        </div>
-                                    </div>
-                                    <div className="flex flex-wrap gap-2 max-h-36 overflow-y-auto">
-                                        {jiraPrioritiesList.map(priority => {
-                                            const isChecked = !!checkedPrioritiesMap[priority];
-                                            return (
-                                                <div key={priority} onClick={() => setCheckedPrioritiesMap(p => ({ ...p, [priority]: !isChecked }))} className={`px-2.5 py-1.5 rounded-lg border flex items-center gap-1.5 cursor-pointer transition-all ${isChecked ? 'bg-indigo-50 border-indigo-300 text-indigo-700' : 'bg-white border-slate-200 text-slate-600'}`}>
-                                                    <span className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center text-[8px] font-bold ${isChecked ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white border-slate-300'}`}>{isChecked ? '✓' : ''}</span>
-                                                    <span className="text-[10px] font-semibold">{priority}</span>
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
+                            {chkCustomIframe && (
+                                <div className="flex flex-col gap-1.5">
+                                    <label className="text-xs font-semibold text-slate-700">Custom Iframes</label>
+                                    <textarea 
+                                        value={customIframesData} 
+                                        onChange={e => setCustomIframesData(e.target.value)} 
+                                        ref={el => { if (el) { el.style.height = "auto"; el.style.height = el.scrollHeight + "px"; } }}
+                                        placeholder="Iframe - Custom Staging:&#10;KM: https://...&#10;EN: https://..." 
+                                        rows="2" 
+                                        className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-medium text-slate-900 placeholder-slate-400 focus:bg-white focus:outline-none focus:border-indigo-600 overflow-hidden resize-none" 
+                                    />
                                 </div>
                             )}
                         </div>
-                    )}
 
-                    {jiraTagsList.length > 0 && (
-                        <div className="bg-slate-50 border border-slate-200 rounded-xl overflow-hidden mt-1">
-                            <button type="button" onClick={() => setIsTagAccordionOpen(!isTagAccordionOpen)} className="w-full px-4 py-3 flex items-center justify-between text-xs font-bold text-slate-700 hover:bg-slate-100 transition-all">
-                                <span>Filter Tags [Type]</span>
-                                <span className="text-slate-400">{isTagAccordionOpen ? '▲' : '▼'}</span>
-                            </button>
-
-                            {isTagAccordionOpen && (
-                                <div className="p-3 border-t border-slate-200 bg-slate-50">
-                                    <div className="flex justify-between items-center mb-2">
-                                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-tight">Select Tags to Include</span>
-                                        <div className="flex gap-1 text-[9px]">
-                                            <button type="button" onClick={() => toggleAllJiraTags(true)} className="text-indigo-600 hover:underline font-bold">All</button>
-                                            <span className="text-slate-300">|</span>
-                                            <button type="button" onClick={() => toggleAllJiraTags(false)} className="text-slate-500 hover:underline">None</button>
-                                        </div>
-                                    </div>
-                                    <div className="flex flex-wrap gap-2 max-h-40 overflow-y-auto">
-                                        {jiraTagsList.map(tag => {
-                                            const isChecked = !!checkedJiraTagsMap[tag];
-                                            return (
-                                                <div key={tag} onClick={() => setCheckedJiraTagsMap(p => ({ ...p, [tag]: !isChecked }))} className={`px-2 py-1.5 rounded-lg border flex items-center gap-1.5 cursor-pointer transition-all ${isChecked ? 'bg-indigo-50 border-indigo-300 text-indigo-700' : 'bg-white border-slate-200 text-slate-600'}`}>
-                                                    <span className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center text-[8px] font-bold ${isChecked ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white border-slate-300'}`}>{isChecked ? '✓' : ''}</span>
-                                                    <span className="text-[10px] font-semibold">{tag}</span>
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                    )}
-                </section>
-
-            </main>
-
-            <section className="w-full mt-6 bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
-                <div className="p-5 flex flex-wrap justify-between items-center gap-3">
-                    <button
-                        type="button"
-                        onClick={() => setIsTcMappingAccordionOpen(!isTcMappingAccordionOpen)}
-                        className="flex items-center gap-2 text-sm font-bold text-slate-800 tracking-wide hover:text-indigo-700 transition-colors"
-                    >
-                        <span className="w-2 h-2 rounded-full bg-amber-500"></span>
-                        <span>In Progress / Failed Test Cases ({inProgressTcs.length})</span>
-                        <span className="text-xs text-slate-400 font-normal ml-1">(Auto-matched on Generate)</span>
-                        <span className="text-slate-400 text-xs ml-1">{isTcMappingAccordionOpen ? '▲' : '▼'}</span>
-                    </button>
-                    <button
-                        type="button"
-                        onClick={handleLoadInProgressTcs}
-                        disabled={isLoadingTcsMapping}
-                        className="px-3.5 h-9 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-sm transition-all disabled:opacity-50 flex items-center gap-1.5"
-                    >
-                        <span>{isLoadingTcsMapping ? "Loading..." : "↻ Load / Override TCs"}</span>
-                    </button>
-                </div>
-
-                {isTcMappingAccordionOpen && (
-                    <div className="px-5 pb-5 border-t border-slate-100 pt-4">
-                        {inProgressTcs.length === 0 ? (
-                            <div className="p-6 text-center text-xs text-slate-400 italic bg-slate-50 rounded-xl border border-dashed border-slate-200">
-                                Auto-runs when clicking <strong>Generate</strong>, or click <strong>↻ Load / Override TCs</strong> to adjust manually.
+                        <div className="pt-4 border-t border-slate-100 flex flex-col gap-2">
+                            <div className="flex justify-between items-center">
+                                <label className="text-xs font-semibold text-slate-700">Custom Notes</label>
+                                <button type="button" onClick={handleAddNote} className="text-xs font-bold text-indigo-600 hover:text-indigo-700 flex items-center gap-1">+ Add Note</button>
                             </div>
-                        ) : (
-                            <div className="flex flex-col gap-2.5">
-                                <div className="hidden md:grid grid-cols-12 gap-3 px-3 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                                    <div className="col-span-4">Test Case (Status)</div>
-                                    <div className="col-span-4">Google Sheet File (Folder A1)</div>
-                                    <div className="col-span-4">Tab Sheet</div>
+                            {customNotesData.length === 0 ? (
+                                <p className="text-[11px] text-slate-400 italic">No custom notes added.</p>
+                            ) : (
+                                customNotesData.map((noteText, idx) => (
+                                    <div key={idx} className="flex gap-2 items-start">
+                                        <textarea 
+                                            value={noteText} 
+                                            onChange={e => handleNoteChange(idx, e.target.value)} 
+                                            ref={el => { if (el) { el.style.height = "auto"; el.style.height = el.scrollHeight + "px"; } }}
+                                            placeholder="Custom notes..." 
+                                            rows="2" 
+                                            className="flex-1 p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-medium text-slate-900 placeholder-slate-400 focus:bg-white focus:outline-none focus:border-indigo-600 overflow-hidden resize-none" 
+                                        />
+                                        <button type="button" onClick={() => handleNoteDelete(idx)} className="p-2 text-rose-500 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all mt-0.5">
+                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                        </button>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                    </section>
+
+                    <section className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm flex flex-col gap-4">
+                        <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                            <div className="flex items-center gap-2.5">
+                                <span className="w-6 h-6 rounded-lg bg-indigo-50 text-indigo-600 text-xs font-extrabold flex items-center justify-center border border-indigo-100">3</span>
+                                <div>
+                                    <h2 className="text-sm font-bold text-slate-900">Scope & Jira Filters</h2>
+                                    <p className="text-[11px] text-slate-400 font-medium">Testing Scope & Ticket Criteria</p>
                                 </div>
-                                {inProgressTcs.map((tc, idx) => {
-                                    const isFailed = tc.status.toLowerCase().includes('fail');
-                                    const fileOptions = driveFolderFiles.map(f => ({ value: f.id, label: f.name }));
-                                    const tabOptions = (driveFileTabsMap[tc.selectedFileId] || []).map(t => ({ value: t, label: t }));
+                            </div>
+                            <span className={`text-[11px] font-bold px-2 py-0.5 rounded-md ${selectedScopesCount > 0 ? 'bg-indigo-50 text-indigo-700' : 'bg-rose-50 text-rose-600'}`}>
+                                {selectedScopesCount} scopes
+                            </span>
+                        </div>
+
+                        <div className="flex flex-col gap-2.5">
+                            <div className="flex justify-between items-center">
+                                <label className="text-xs font-semibold text-slate-700">Scope of Testing <span className="text-rose-500">*</span></label>
+                                <div className="flex gap-2 text-[11px]">
+                                    <button type="button" onClick={() => toggleAllScopes(true)} className="text-indigo-600 hover:underline font-bold">All</button>
+                                    <span className="text-slate-300">|</span>
+                                    <button type="button" onClick={() => toggleAllScopes(false)} className="text-slate-500 hover:underline">None</button>
+                                </div>
+                            </div>
+
+                            <div className="flex gap-2">
+                                <input type="text" value={newScopeInput} onChange={e => setNewScopeInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleAddScope()} placeholder="Add custom scope..." className="flex-1 h-9 px-3 bg-slate-50 border border-slate-300 rounded-xl text-xs font-medium text-slate-900 placeholder-slate-400 focus:bg-white focus:outline-none focus:border-indigo-600" />
+                                <button type="button" onClick={handleAddScope} className="px-3 h-9 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl border border-slate-300 transition-all shrink-0">+ Add</button>
+                            </div>
+
+                            <div className="flex flex-wrap gap-1.5 max-h-[180px] overflow-y-auto pr-1">
+                                {scopesList.map(scope => {
+                                    const isChecked = !!checkedScopesMap[scope];
                                     return (
-                                        <div key={tc.id} className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center p-3 bg-slate-50 border border-slate-200 rounded-xl">
-                                            <div className="md:col-span-4 flex items-center justify-between gap-2">
-                                                <span className="text-xs font-bold text-slate-800 truncate" title={tc.name}>{tc.name}</span>
-                                                <div className="flex items-center gap-1.5 shrink-0">
-                                                    <span className="text-[10px] font-bold text-slate-500">{tc.remaining}</span>
-                                                    <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${isFailed ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-700'}`}>
-                                                        {tc.status}
-                                                    </span>
-                                                </div>
-                                            </div>
-                                            <div className="md:col-span-4">
-                                                <SearchableDropdown
-                                                    options={fileOptions}
-                                                    value={tc.selectedFileId}
-                                                    onChange={(val) => handleTcFileChange(idx, val)}
-                                                    placeholder="Select Google Sheet file..."
-                                                />
-                                            </div>
-                                            <div className="md:col-span-4">
-                                                <SearchableDropdown
-                                                    options={tabOptions}
-                                                    value={tc.selectedTab}
-                                                    onChange={(val) => handleTcTabChange(idx, val)}
-                                                    placeholder={tc.selectedFileId ? "Select Tab Sheet..." : "Select file first..."}
-                                                />
-                                            </div>
+                                        <div key={scope} className={`group flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-xs font-semibold cursor-pointer transition-all ${isChecked ? 'bg-indigo-50 border-indigo-400 text-indigo-700' : 'bg-slate-50 border-slate-200 text-slate-600 hover:border-slate-300'}`}>
+                                            <span onClick={() => setCheckedScopesMap(p => ({ ...p, [scope]: !isChecked }))} className="flex items-center gap-1.5">
+                                                <span className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center text-[8px] font-bold ${isChecked ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white border-slate-300'}`}>{isChecked ? '✓' : ''}</span>
+                                                <span>{scope}</span>
+                                            </span>
+                                            {!DEFAULT_SCOPES.includes(scope) && (
+                                                <button type="button" onClick={(e) => { e.stopPropagation(); handleDeleteScope(scope); }} className="text-slate-400 hover:text-rose-500 ml-0.5">✕</button>
+                                            )}
                                         </div>
                                     );
                                 })}
                             </div>
-                        )}
-                    </div>
-                )}
-            </section>
+                        </div>
 
-            <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40">
-                <div className="bg-white/90 backdrop-blur-md border border-slate-200 text-slate-900 rounded-2xl p-2 shadow-2xl flex items-center justify-center gap-2">
+                        <div className="pt-3 border-t border-slate-100 flex flex-col gap-2.5">
+                            <div className="bg-slate-50 border border-slate-200 rounded-xl overflow-hidden">
+                                <button type="button" onClick={() => setIsAccordionOpen(!isAccordionOpen)} className="w-full px-3.5 py-2.5 flex items-center justify-between text-xs font-bold text-slate-700 hover:bg-slate-100 transition-all">
+                                    <span className="flex items-center gap-2">
+                                        <span>Jira Statuses</span>
+                                        {statusPillList.length > 0 && (
+                                            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md bg-white border border-slate-200 text-slate-500">
+                                                {activeStatusCount}/{statusPillList.length}
+                                            </span>
+                                        )}
+                                    </span>
+                                    <span className="text-slate-400 text-[10px]">{isAccordionOpen ? '▲' : '▼'}</span>
+                                </button>
+
+                                {isAccordionOpen && (
+                                    <div className="p-3 border-t border-slate-200 bg-slate-50">
+                                        {statusPillList.length === 0 ? (
+                                            <div className="p-3 text-center text-xs text-slate-400 italic">
+                                                Select a Project Key and click <strong>↻ Sync</strong>.
+                                            </div>
+                                        ) : (
+                                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                                                <div className="flex flex-col gap-1.5">
+                                                    <div className="flex justify-between items-center">
+                                                        <span className="text-[10px] font-bold text-slate-500 uppercase">Count</span>
+                                                        <div className="flex gap-1 text-[9px]">
+                                                            <button type="button" onClick={() => toggleAllJiraCategory('B', true)} className="text-indigo-600 hover:underline font-bold">All</button>
+                                                            <span className="text-slate-300">|</span>
+                                                            <button type="button" onClick={() => toggleAllJiraCategory('B', false)} className="text-slate-500 hover:underline">None</button>
+                                                        </div>
+                                                    </div>
+                                                    {statusPillList.map(s => { 
+                                                        const isChecked = !!checkedJiraB[s];
+                                                        return (
+                                                            <div key={s} onClick={() => setCheckedJiraB(p => ({ ...p, [s]: !isChecked }))} className={`px-2 py-1 rounded-lg border flex items-center justify-between cursor-pointer transition-all ${isChecked ? 'bg-indigo-50 border-indigo-300 text-indigo-700' : 'bg-white border-slate-200 text-slate-600'}`}>
+                                                                <span className="text-[10px] font-semibold truncate">{s}</span>
+                                                                <span className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center text-[8px] font-bold shrink-0 ${isChecked ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white border-slate-300'}`}>{isChecked ? '✓' : ''}</span>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+
+                                                <div className="flex flex-col gap-1.5">
+                                                    <div className="flex justify-between items-center">
+                                                        <span className="text-[10px] font-bold text-slate-500 uppercase">Unverified</span>
+                                                        <div className="flex gap-1 text-[9px]">
+                                                            <button type="button" onClick={() => toggleAllJiraCategory('Unverified', true)} className="text-amber-600 hover:underline font-bold">All</button>
+                                                            <span className="text-slate-300">|</span>
+                                                            <button type="button" onClick={() => toggleAllJiraCategory('Unverified', false)} className="text-slate-500 hover:underline">None</button>
+                                                        </div>
+                                                    </div>
+                                                    {statusPillList.map(s => {
+                                                        const isChecked = !!checkedJiraUnverified[s];
+                                                        return (
+                                                            <div key={s} onClick={() => setCheckedJiraUnverified(p => ({ ...p, [s]: !isChecked }))} className={`px-2 py-1 rounded-lg border flex items-center justify-between cursor-pointer transition-all ${isChecked ? 'bg-amber-50 border-amber-300 text-amber-800' : 'bg-white border-slate-200 text-slate-600'}`}>
+                                                                <span className="text-[10px] font-semibold truncate">{s}</span>
+                                                                <span className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center text-[8px] font-bold shrink-0 ${isChecked ? 'bg-amber-500 text-white border-amber-500' : 'bg-white border-slate-300'}`}>{isChecked ? '✓' : ''}</span>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+
+                                                <div className="flex flex-col gap-1.5">
+                                                    <div className="flex justify-between items-center">
+                                                        <span className="text-[10px] font-bold text-slate-500 uppercase">Pending</span>
+                                                        <div className="flex gap-1 text-[9px]">
+                                                            <button type="button" onClick={() => toggleAllJiraCategory('Pending', true)} className="text-indigo-600 hover:underline font-bold">All</button>
+                                                            <span className="text-slate-300">|</span>
+                                                            <button type="button" onClick={() => toggleAllJiraCategory('Pending', false)} className="text-slate-500 hover:underline">None</button>
+                                                        </div>
+                                                    </div>
+                                                    {statusPillList.map(s => {
+                                                        const isChecked = !!checkedJiraPending[s];
+                                                        return (
+                                                            <div key={s} onClick={() => setCheckedJiraPending(p => ({ ...p, [s]: !isChecked }))} className={`px-2 py-1 rounded-lg border flex items-center justify-between cursor-pointer transition-all ${isChecked ? 'bg-indigo-50 border-indigo-300 text-indigo-700' : 'bg-white border-slate-200 text-slate-600'}`}>
+                                                                <span className="text-[10px] font-semibold truncate">{s}</span>
+                                                                <span className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center text-[8px] font-bold shrink-0 ${isChecked ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white border-slate-300'}`}>{isChecked ? '✓' : ''}</span>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+
+                            {jiraIssueTypesList.length > 0 && (
+                                <div className="bg-slate-50 border border-slate-200 rounded-xl overflow-hidden">
+                                    <button type="button" onClick={() => setIsIssueTypeAccordionOpen(!isIssueTypeAccordionOpen)} className="w-full px-3.5 py-2.5 flex items-center justify-between text-xs font-bold text-slate-700 hover:bg-slate-100 transition-all">
+                                        <span className="flex items-center gap-2">
+                                            <span>Worktypes</span>
+                                            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md bg-white border border-slate-200 text-slate-500">
+                                                {activeIssueTypesCount}/{jiraIssueTypesList.length}
+                                            </span>
+                                        </span>
+                                        <span className="text-slate-400 text-[10px]">{isIssueTypeAccordionOpen ? '▲' : '▼'}</span>
+                                    </button>
+
+                                    {isIssueTypeAccordionOpen && (
+                                        <div className="p-3 border-t border-slate-200 bg-slate-50">
+                                            <div className="flex justify-between items-center mb-2">
+                                                <span className="text-[10px] font-bold text-slate-500 uppercase">Include Types</span>
+                                                <div className="flex gap-1 text-[9px]">
+                                                    <button type="button" onClick={() => toggleAllIssueTypes(true)} className="text-indigo-600 hover:underline font-bold">All</button>
+                                                    <span className="text-slate-300">|</span>
+                                                    <button type="button" onClick={() => toggleAllIssueTypes(false)} className="text-slate-500 hover:underline">None</button>
+                                                </div>
+                                            </div>
+                                            <div className="flex flex-wrap gap-1.5 max-h-36 overflow-y-auto">
+                                                {jiraIssueTypesList.map(type => {
+                                                    const isChecked = !!checkedIssueTypesMap[type];
+                                                    return (
+                                                        <div key={type} onClick={() => setCheckedIssueTypesMap(p => ({ ...p, [type]: !isChecked }))} className={`px-2 py-1 rounded-lg border flex items-center gap-1.5 cursor-pointer transition-all ${isChecked ? 'bg-indigo-50 border-indigo-300 text-indigo-700' : 'bg-white border-slate-200 text-slate-600'}`}>
+                                                            <span className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center text-[8px] font-bold ${isChecked ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white border-slate-300'}`}>{isChecked ? '✓' : ''}</span>
+                                                            <span className="text-[10px] font-semibold">{type}</span>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
+                            {jiraPrioritiesList.length > 0 && (
+                                <div className="bg-slate-50 border border-slate-200 rounded-xl overflow-hidden">
+                                    <button type="button" onClick={() => setIsPriorityAccordionOpen(!isPriorityAccordionOpen)} className="w-full px-3.5 py-2.5 flex items-center justify-between text-xs font-bold text-slate-700 hover:bg-slate-100 transition-all">
+                                        <span className="flex items-center gap-2">
+                                            <span>Priorities</span>
+                                            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md bg-white border border-slate-200 text-slate-500">
+                                                {activePrioritiesCount}/{jiraPrioritiesList.length}
+                                            </span>
+                                        </span>
+                                        <span className="text-slate-400 text-[10px]">{isPriorityAccordionOpen ? '▲' : '▼'}</span>
+                                    </button>
+
+                                    {isPriorityAccordionOpen && (
+                                        <div className="p-3 border-t border-slate-200 bg-slate-50">
+                                            <div className="flex justify-between items-center mb-2">
+                                                <span className="text-[10px] font-bold text-slate-500 uppercase">Include Priorities</span>
+                                                <div className="flex gap-1 text-[9px]">
+                                                    <button type="button" onClick={() => toggleAllPriorities(true)} className="text-indigo-600 hover:underline font-bold">All</button>
+                                                    <span className="text-slate-300">|</span>
+                                                    <button type="button" onClick={() => toggleAllPriorities(false)} className="text-slate-500 hover:underline">None</button>
+                                                </div>
+                                            </div>
+                                            <div className="flex flex-wrap gap-1.5 max-h-36 overflow-y-auto">
+                                                {jiraPrioritiesList.map(priority => {
+                                                    const isChecked = !!checkedPrioritiesMap[priority];
+                                                    return (
+                                                        <div key={priority} onClick={() => setCheckedPrioritiesMap(p => ({ ...p, [priority]: !isChecked }))} className={`px-2 py-1 rounded-lg border flex items-center gap-1.5 cursor-pointer transition-all ${isChecked ? 'bg-indigo-50 border-indigo-300 text-indigo-700' : 'bg-white border-slate-200 text-slate-600'}`}>
+                                                            <span className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center text-[8px] font-bold ${isChecked ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white border-slate-300'}`}>{isChecked ? '✓' : ''}</span>
+                                                            <span className="text-[10px] font-semibold">{priority}</span>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
+                            {jiraTagsList.length > 0 && (
+                                <div className="bg-slate-50 border border-slate-200 rounded-xl overflow-hidden">
+                                    <button type="button" onClick={() => setIsTagAccordionOpen(!isTagAccordionOpen)} className="w-full px-3.5 py-2.5 flex items-center justify-between text-xs font-bold text-slate-700 hover:bg-slate-100 transition-all">
+                                        <span className="flex items-center gap-2">
+                                            <span>Tags [Type]</span>
+                                            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md bg-white border border-slate-200 text-slate-500">
+                                                {activeTagsCount}/{jiraTagsList.length}
+                                            </span>
+                                        </span>
+                                        <span className="text-slate-400 text-[10px]">{isTagAccordionOpen ? '▲' : '▼'}</span>
+                                    </button>
+
+                                    {isTagAccordionOpen && (
+                                        <div className="p-3 border-t border-slate-200 bg-slate-50">
+                                            <div className="flex justify-between items-center mb-2">
+                                                <span className="text-[10px] font-bold text-slate-500 uppercase">Include Tags</span>
+                                                <div className="flex gap-1 text-[9px]">
+                                                    <button type="button" onClick={() => toggleAllJiraTags(true)} className="text-indigo-600 hover:underline font-bold">All</button>
+                                                    <span className="text-slate-300">|</span>
+                                                    <button type="button" onClick={() => toggleAllJiraTags(false)} className="text-slate-500 hover:underline">None</button>
+                                                </div>
+                                            </div>
+                                            <div className="flex flex-wrap gap-1.5 max-h-40 overflow-y-auto">
+                                                {jiraTagsList.map(tag => {
+                                                    const isChecked = !!checkedJiraTagsMap[tag];
+                                                    return (
+                                                        <div key={tag} onClick={() => setCheckedJiraTagsMap(p => ({ ...p, [tag]: !isChecked }))} className={`px-2 py-1 rounded-lg border flex items-center gap-1.5 cursor-pointer transition-all ${isChecked ? 'bg-indigo-50 border-indigo-300 text-indigo-700' : 'bg-white border-slate-200 text-slate-600'}`}>
+                                                            <span className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center text-[8px] font-bold ${isChecked ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white border-slate-300'}`}>{isChecked ? '✓' : ''}</span>
+                                                            <span className="text-[10px] font-semibold">{tag}</span>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    </section>
+                </main>
+
+                <section className="w-full bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+                    <div className="px-5 py-4 flex flex-wrap justify-between items-center gap-3">
+                        <button
+                            type="button"
+                            onClick={() => setIsTcMappingAccordionOpen(!isTcMappingAccordionOpen)}
+                            className="flex items-center gap-2.5 text-left group"
+                        >
+                            <span className="w-6 h-6 rounded-lg bg-amber-50 text-amber-600 text-xs font-extrabold flex items-center justify-center border border-amber-200">4</span>
+                            <div>
+                                <div className="flex items-center gap-2">
+                                    <h2 className="text-sm font-bold text-slate-900 group-hover:text-indigo-700 transition-colors">In Progress / Failed TC Mapping</h2>
+                                    <span className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-slate-100 text-slate-600">{inProgressTcs.length}</span>
+                                    <span className="text-slate-400 text-[10px]">{isTcMappingAccordionOpen ? '▲' : '▼'}</span>
+                                </div>
+                                <p className="text-[11px] text-slate-400 font-medium">Auto-matched on Generate & cached per project. Expand to override.</p>
+                            </div>
+                        </button>
+                        <button
+                            type="button"
+                            onClick={handleLoadInProgressTcs}
+                            disabled={isLoadingTcsMapping}
+                            className="px-3.5 h-9 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 text-xs font-bold rounded-xl transition-all disabled:opacity-50 flex items-center gap-1.5"
+                        >
+                            <span>{isLoadingTcsMapping ? "Scanning..." : "↻ Load / Override TCs"}</span>
+                        </button>
+                    </div>
+
+                    {isTcMappingAccordionOpen && (
+                        <div className="px-5 pb-5 border-t border-slate-100 pt-4">
+                            {inProgressTcs.length === 0 ? (
+                                <div className="p-6 text-center text-xs text-slate-400 italic bg-slate-50 rounded-xl border border-dashed border-slate-200">
+                                    Auto-runs when clicking <strong>Generate</strong>, or click <strong>↻ Load / Override TCs</strong> to adjust manually.
+                                </div>
+                            ) : (
+                                <div className="flex flex-col gap-2">
+                                    <div className="hidden md:grid grid-cols-12 gap-3 px-3 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                                        <div className="col-span-4">Test Case (Status)</div>
+                                        <div className="col-span-4">Google Sheet File (Folder A1)</div>
+                                        <div className="col-span-4">Tab Sheet</div>
+                                    </div>
+                                    {inProgressTcs.map((tc, idx) => {
+                                        const isFailed = tc.status.toLowerCase().includes('fail');
+                                        const fileOptions = driveFolderFiles.map(f => ({ value: f.id, label: f.name }));
+                                        const tabOptions = (driveFileTabsMap[tc.selectedFileId] || []).map(t => ({ value: t, label: t }));
+                                        return (
+                                            <div key={tc.id} className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center p-2.5 bg-slate-50 border border-slate-200 rounded-xl">
+                                                <div className="md:col-span-4 flex items-center justify-between gap-2 px-1">
+                                                    <span className="text-xs font-bold text-slate-800 truncate" title={tc.name}>{tc.name}</span>
+                                                    <div className="flex items-center gap-1.5 shrink-0">
+                                                        <span className="text-[10px] font-bold text-slate-500">{tc.remaining}</span>
+                                                        <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${isFailed ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-700'}`}>
+                                                            {tc.status}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                                <div className="md:col-span-4">
+                                                    <SearchableDropdown
+                                                        options={fileOptions}
+                                                        value={tc.selectedFileId}
+                                                        onChange={(val) => handleTcFileChange(idx, val)}
+                                                        placeholder="Select Google Sheet file..."
+                                                    />
+                                                </div>
+                                                <div className="md:col-span-4">
+                                                    <SearchableDropdown
+                                                        options={tabOptions}
+                                                        value={tc.selectedTab}
+                                                        onChange={(val) => handleTcTabChange(idx, val)}
+                                                        placeholder={tc.selectedFileId ? "Select Tab Sheet..." : "Select file first..."}
+                                                    />
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
+                        </div>
+                    )}
+                </section>
+            </div>
+
+            <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-40">
+                <div className="bg-white/95 backdrop-blur-md border border-slate-200 text-slate-900 rounded-2xl p-2 shadow-2xl flex items-center justify-center gap-2">
                     <button
                         type="button"
                         onClick={handleGenerate}
                         disabled={isGenerating}
-                        className="w-32 h-9 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-md transition-all disabled:opacity-50 flex items-center justify-center gap-1.5 whitespace-nowrap"
+                        className="w-36 h-10 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-md transition-all disabled:opacity-50 flex items-center justify-center gap-1.5 whitespace-nowrap"
                     >
                         {isGenerating ? (
                             <>
@@ -2975,7 +3036,7 @@ export default function App() {
                                 <span>Generating...</span>
                             </>
                         ) : (
-                            <span>Generate</span>
+                            <span>Generate Report</span>
                         )}
                     </button>
 
@@ -2983,7 +3044,7 @@ export default function App() {
                         type="button"
                         onClick={() => setIsPreviewOpen(true)}
                         disabled={!outputReport}
-                        className="w-32 h-9 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-xl border border-slate-300 transition-all disabled:opacity-40 flex items-center justify-center whitespace-nowrap"
+                        className="w-28 h-10 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-xl border border-slate-300 transition-all disabled:opacity-40 flex items-center justify-center whitespace-nowrap"
                     >
                         Preview
                     </button>
@@ -2992,7 +3053,7 @@ export default function App() {
                         type="button"
                         onClick={executeCopy}
                         disabled={!outputReport}
-                        className="w-32 h-9 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-xl border border-slate-300 transition-all disabled:opacity-40 flex items-center justify-center gap-1.5 whitespace-nowrap"
+                        className="w-28 h-10 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-sm transition-all disabled:opacity-40 disabled:bg-slate-200 disabled:text-slate-500 flex items-center justify-center gap-1.5 whitespace-nowrap"
                     >
                         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
@@ -3025,13 +3086,13 @@ export default function App() {
             {toasts.length > 0 && (
                 <div className="fixed top-5 left-1/2 -translate-x-1/2 z-[100] flex flex-col gap-3 w-full max-w-lg pointer-events-none">
                     {toasts.map(toast => (
-                        <div key={toast.id} className={`pointer-events-auto p-4 rounded-2xl shadow-xl border text-sm font-bold flex items-center justify-between gap-4 transition-all ${toast.type === 'error' ? 'bg-rose-50 border-rose-200 text-rose-800' : (toast.type === 'loading' ? 'bg-indigo-50 border-indigo-200 text-indigo-800' : 'bg-emerald-50 border-emerald-200 text-emerald-800')}`}>
-                            <div className="flex items-center gap-3">
-                                {toast.type === 'loading' && <svg className="animate-spin h-5 w-5 text-indigo-600" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>}
-                                <span className="text-base leading-relaxed">{toast.message}</span>
+                        <div key={toast.id} className={`pointer-events-auto p-3.5 rounded-2xl shadow-xl border text-xs font-bold flex items-center justify-between gap-4 transition-all ${toast.type === 'error' ? 'bg-rose-50 border-rose-200 text-rose-800' : (toast.type === 'loading' ? 'bg-indigo-50 border-indigo-200 text-indigo-800' : 'bg-emerald-50 border-emerald-200 text-emerald-800')}`}>
+                            <div className="flex items-center gap-2.5">
+                                {toast.type === 'loading' && <svg className="animate-spin h-4 w-4 text-indigo-600 shrink-0" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>}
+                                <span className="text-sm leading-snug">{toast.message}</span>
                             </div>
                             {toast.type !== 'loading' && (
-                                <button type="button" onClick={() => setToasts(prev => prev.filter(t => t.id !== toast.id))} className="text-slate-400 hover:text-slate-700 w-8 h-8 flex items-center justify-center rounded-full hover:bg-black/5 transition-all">✕</button>
+                                <button type="button" onClick={() => setToasts(prev => prev.filter(t => t.id !== toast.id))} className="text-slate-400 hover:text-slate-700 w-7 h-7 flex items-center justify-center rounded-full hover:bg-black/5 transition-all shrink-0">✕</button>
                             )}
                         </div>
                     ))}
