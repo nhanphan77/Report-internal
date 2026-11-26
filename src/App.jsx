@@ -861,31 +861,39 @@ export default function App() {
     };
 
     const fetchTcBreakdownFromTab = async (fileId, tabName, token) => {
-        if (!fileId || !tabName) return '';
-        try {
-            const url = `https://sheets.googleapis.com/v4/spreadsheets/${fileId}/values/'${encodeURIComponent(tabName)}'`;
-            const res = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } });
-            if (!res.ok) return '';
-            const data = await res.json();
-            const rows = data.values || [];
+    if (!fileId || !tabName) return '';
+    try {
+        const url = `https://sheets.googleapis.com/v4/spreadsheets/${fileId}/values/'${encodeURIComponent(tabName)}'`;
+        const res = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } });
+        if (!res.ok) return '';
+        const data = await res.json();
+        const rows = data.values || [];
 
-            const stats = { Passed: '', Failed: '', Blocked: '', 'In-completed': '' };
+        const passedParts = { passed: 0, na: 0, notTested: 0, warning: 0 };
+        const stats = { Passed: '', Failed: '', Blocked: '', 'In-completed': '' };
 
-            for (let i = 0; i < rows.length; i++) {
-                const row = rows[i];
-                for (let j = 2; j < row.length; j++) {
-                    const valCell = row[j] ? row[j].toString().trim() : '';
-                    const labelCell = row[j - 2] ? row[j - 2].toString().trim().toLowerCase() : '';
+        for (let i = 0; i < rows.length; i++) {
+            const row = rows[i];
+            for (let j = 2; j < row.length; j++) {
+                const valCell = row[j] ? row[j].toString().trim() : '';
+                const labelCell = row[j - 2] ? row[j - 2].toString().trim().toLowerCase() : '';
 
-                    if (!valCell.includes('%')) continue;
+                if (!valCell.includes('%')) continue;
 
-                    const cleanPct = valCell.replace('.00%', '%');
-                    const numVal = parseFloat(cleanPct);
-                    if (isNaN(numVal) || numVal === 0) continue;
+                const cleanPct = valCell.replace('.00%', '%');
+                const numVal = parseFloat(cleanPct);
+                if (isNaN(numVal)) continue;
 
-                    if (labelCell === 'passed') {
-                        stats.Passed = `${cleanPct} Passed`;
-                    } else if (labelCell === 'failed') {
+                if (labelCell === 'passed') {
+                    passedParts.passed = numVal;
+                } else if (labelCell === 'n/a' || labelCell === 'na') {
+                    passedParts.na = numVal;
+                } else if (labelCell === 'not tested' || labelCell === 'nottested') {
+                    passedParts.notTested = numVal;
+                } else if (labelCell.includes('warning')) {
+                    passedParts.warning = numVal;
+                } else if (numVal !== 0) {
+                    if (labelCell === 'failed') {
                         stats.Failed = `${cleanPct} Failed`;
                     } else if (labelCell === 'blocked') {
                         stats.Blocked = `${cleanPct} Blocked`;
@@ -894,15 +902,21 @@ export default function App() {
                     }
                 }
             }
-
-            return ['Passed', 'Failed', 'Blocked', 'In-completed']
-                .map(key => stats[key])
-                .filter(Boolean)
-                .join(', ');
-        } catch {
-            return '';
         }
-    };
+
+        const totalPassed = Number((passedParts.passed + passedParts.na + passedParts.notTested + passedParts.warning).toFixed(2));
+        if (totalPassed > 0) {
+            stats.Passed = `${totalPassed}% Passed`;
+        }
+
+        return ['Passed', 'Failed', 'Blocked', 'In-completed']
+            .map(key => stats[key])
+            .filter(Boolean)
+            .join(', ');
+    } catch {
+        return '';
+    }
+};
 
     const handleLoadInProgressTcs = async () => {
         if (!sheetTabName || sheetTabName.length === 0) {
