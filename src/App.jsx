@@ -73,7 +73,7 @@ const findBestTabMatch = (tcName, tabs) => {
     let bestTab = '';
     let bestScore = 0;
 
-    for (let i = tabs.length - 1; i >= 0; i--) {
+    for (let i = 0; i < tabs.length; i++) {
         const tab = tabs[i];
         const tabTokens = tokenizeText(tab);
         let score = 0;
@@ -89,7 +89,7 @@ const findBestTabMatch = (tcName, tabs) => {
         }
     }
 
-    return bestTab || tabs[tabs.length - 1];
+    return bestTab || tabs[0];
 };
 
 const SearchableDropdown = React.forwardRef(({ options, value, onChange, placeholder, isError, isMulti = false }, ref) => {
