@@ -860,6 +860,50 @@ export default function App() {
         return (data.sheets || []).map(s => s.properties.title);
     };
 
+    const fetchTcBreakdownFromTab = async (fileId, tabName, token) => {
+        if (!fileId || !tabName) return '';
+        try {
+            const url = `https://sheets.googleapis.com/v4/spreadsheets/${fileId}/values/'${encodeURIComponent(tabName)}'`;
+            const res = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } });
+            if (!res.ok) return '';
+            const data = await res.json();
+            const rows = data.values || [];
+
+            const stats = { Passed: '', Failed: '', Blocked: '', 'In-completed': '' };
+
+            for (let i = 0; i < rows.length; i++) {
+                const row = rows[i];
+                for (let j = 2; j < row.length; j++) {
+                    const valCell = row[j] ? row[j].toString().trim() : '';
+                    const labelCell = row[j - 2] ? row[j - 2].toString().trim().toLowerCase() : '';
+
+                    if (!valCell.includes('%')) continue;
+
+                    const cleanPct = valCell.replace('.00%', '%');
+                    const numVal = parseFloat(cleanPct);
+                    if (isNaN(numVal) || numVal === 0) continue;
+
+                    if (labelCell === 'passed') {
+                        stats.Passed = `${cleanPct} Passed`;
+                    } else if (labelCell === 'failed') {
+                        stats.Failed = `${cleanPct} Failed`;
+                    } else if (labelCell === 'blocked') {
+                        stats.Blocked = `${cleanPct} Blocked`;
+                    } else if (labelCell.includes('incomplete') || labelCell.includes('in-complete')) {
+                        stats['In-completed'] = `${cleanPct} In-completed`;
+                    }
+                }
+            }
+
+            return ['Passed', 'Failed', 'Blocked', 'In-completed']
+                .map(key => stats[key])
+                .filter(Boolean)
+                .join(', ');
+        } catch {
+            return '';
+        }
+    };
+
     const handleLoadInProgressTcs = async () => {
         if (!sheetTabName || sheetTabName.length === 0) {
             showToast("Please select Sheet Tab Name first.", 'error');
@@ -1470,6 +1514,29 @@ export default function App() {
                                     displayValue: disp, 
                                     rowOriginalIndex: rawSheetItems.length
                                 });
+                            }
+                        }
+                    }
+                }
+
+                if (inProgressTcs.length > 0 && rawSheetItems.length > 0) {
+                    showToast('Reading detailed % from mapped TC sheets...', 'loading');
+                    const breakdownCache = {};
+
+                    for (const item of rawSheetItems) {
+                        if (item.statusKey !== 'IN PROGRESS') continue;
+
+                        const mappedTc = inProgressTcs.find(
+                            tc => tc.name.trim().toLowerCase() === item.name.trim().toLowerCase() && tc.selectedFileId && tc.selectedTab
+                        );
+
+                        if (mappedTc) {
+                            const cacheKey = `${mappedTc.selectedFileId}___${mappedTc.selectedTab}`;
+                            if (breakdownCache[cacheKey] === undefined) {
+                                breakdownCache[cacheKey] = await fetchTcBreakdownFromTab(mappedTc.selectedFileId, mappedTc.selectedTab, token);
+                            }
+                            if (breakdownCache[cacheKey]) {
+                                item.displayValue = breakdownCache[cacheKey];
                             }
                         }
                     }
