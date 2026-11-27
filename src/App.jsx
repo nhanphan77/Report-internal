@@ -2498,26 +2498,96 @@ export default function App() {
                             )}
                         </div>
 
-                        <div className="pt-4 border-t border-slate-100 flex flex-col gap-1.5">
-                            <label className="text-xs font-semibold text-slate-700">Google Sheet Tab <span className="text-rose-500">*</span></label>
-                            <div className="flex gap-2">
-                                <div className="flex-1 min-w-0">
-                                    <SearchableDropdown 
-                                        isMulti={true}
-                                        ref={sheetTabNameRef}
-                                        options={availableSheetTabs.map(t => ({ value: t, label: t }))} 
-                                        value={sheetTabName} 
-                                        onChange={val => {
-                                            setSheetTabName(val);
-                                            setFormErrors(prev => prev.filter(err => err !== "Sheet Tab Name"));
-                                        }} 
-                                        placeholder="Select Sheet Tab..."
-                                        isError={formErrors.includes("Sheet Tab Name")}
-                                    />
+                        <div className="pt-4 border-t border-slate-100 flex flex-col gap-3">
+                            <div className="flex flex-col gap-1.5">
+                                <label className="text-xs font-semibold text-slate-700">Google Sheet Tab <span className="text-rose-500">*</span></label>
+                                <div className="flex gap-2">
+                                    <div className="flex-1 min-w-0">
+                                        <SearchableDropdown 
+                                            isMulti={true}
+                                            ref={sheetTabNameRef}
+                                            options={availableSheetTabs.map(t => ({ value: t, label: t }))} 
+                                            value={sheetTabName} 
+                                            onChange={val => {
+                                                setSheetTabName(val);
+                                                setFormErrors(prev => prev.filter(err => err !== "Sheet Tab Name"));
+                                            }} 
+                                            placeholder="Select Sheet Tab..."
+                                            isError={formErrors.includes("Sheet Tab Name")}
+                                        />
+                                    </div>
+                                    <button type="button" onClick={handleLoadTabs} className="px-3 h-[38px] bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 text-xs font-bold rounded-xl transition-all flex items-center justify-center shrink-0">
+                                        <span>↻ Load</span>
+                                    </button>
                                 </div>
-                                <button type="button" onClick={handleLoadTabs} className="px-3 h-[38px] bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 text-xs font-bold rounded-xl transition-all flex items-center justify-center shrink-0">
-                                    <span>↻ Load</span>
-                                </button>
+                            </div>
+
+                            <div className="bg-slate-50 border border-slate-200 rounded-xl">
+                                <div className="px-3.5 py-2.5 flex items-center justify-between gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => setIsTcMappingAccordionOpen(!isTcMappingAccordionOpen)}
+                                        className="flex items-center gap-2 text-xs font-bold text-slate-700 hover:text-indigo-700 transition-colors min-w-0"
+                                    >
+                                        <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0"></span>
+                                        <span className="truncate">In Progress / Failed TCs</span>
+                                        <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md bg-white border border-slate-200 text-slate-500">
+                                            {inProgressTcs.length}
+                                        </span>
+                                        <span className="text-slate-400 text-[10px]">{isTcMappingAccordionOpen ? '▲' : '▼'}</span>
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={handleLoadInProgressTcs}
+                                        disabled={isLoadingTcsMapping}
+                                        className="px-2.5 h-7 bg-white hover:bg-indigo-50 text-indigo-700 border border-indigo-200 text-[11px] font-bold rounded-lg transition-all disabled:opacity-50 shrink-0"
+                                    >
+                                        {isLoadingTcsMapping ? "Loading..." : "↻ Load"}
+                                    </button>
+                                </div>
+
+                                {isTcMappingAccordionOpen && (
+                                    <div className="p-3 border-t border-slate-200 flex flex-col gap-2.5">
+                                        {inProgressTcs.length === 0 ? (
+                                            <div className="p-3 text-center text-[11px] text-slate-400 italic bg-white rounded-lg border border-dashed border-slate-200">
+                                                Auto-runs on <strong>Generate</strong>, or click <strong>↻ Load</strong> to adjust manually.
+                                            </div>
+                                        ) : (
+                                            inProgressTcs.map((tc, idx) => {
+                                                const isFailed = tc.status.toLowerCase().includes('fail');
+                                                const fileOptions = driveFolderFiles.map(f => ({ value: f.id, label: f.name }));
+                                                const tabOptions = (driveFileTabsMap[tc.selectedFileId] || []).map(t => ({ value: t, label: t }));
+                                                return (
+                                                    <div key={tc.id} className="p-2.5 bg-white border border-slate-200 rounded-xl flex flex-col gap-2">
+                                                        <div className="flex items-center justify-between gap-2">
+                                                            <span className="text-xs font-bold text-slate-800 truncate" title={tc.name}>{tc.name}</span>
+                                                            <div className="flex items-center gap-1.5 shrink-0">
+                                                                <span className="text-[10px] font-bold text-slate-500">{tc.remaining}</span>
+                                                                <span className={`px-1.5 py-0.5 rounded-md text-[10px] font-bold ${isFailed ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-700'}`}>
+                                                                    {tc.status}
+                                                                </span>
+                                                            </div>
+                                                        </div>
+                                                        <div className="grid grid-cols-2 gap-2">
+                                                            <SearchableDropdown
+                                                                options={fileOptions}
+                                                                value={tc.selectedFileId}
+                                                                onChange={(val) => handleTcFileChange(idx, val)}
+                                                                placeholder="Select File..."
+                                                            />
+                                                            <SearchableDropdown
+                                                                options={tabOptions}
+                                                                value={tc.selectedTab}
+                                                                onChange={(val) => handleTcTabChange(idx, val)}
+                                                                placeholder={tc.selectedFileId ? "Select Tab..." : "File first..."}
+                                                            />
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })
+                                        )}
+                                    </div>
+                                )}
                             </div>
                         </div>
                     </section>
@@ -2937,86 +3007,6 @@ export default function App() {
                         </div>
                     </section>
                 </main>
-
-                <section className="w-full bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
-                    <div className="px-5 py-4 flex flex-wrap justify-between items-center gap-3">
-                        <button
-                            type="button"
-                            onClick={() => setIsTcMappingAccordionOpen(!isTcMappingAccordionOpen)}
-                            className="flex items-center gap-2.5 text-left group"
-                        >
-                            <span className="w-6 h-6 rounded-lg bg-amber-50 text-amber-600 text-xs font-extrabold flex items-center justify-center border border-amber-200">4</span>
-                            <div>
-                                <div className="flex items-center gap-2">
-                                    <h2 className="text-sm font-bold text-slate-900 group-hover:text-indigo-700 transition-colors">In Progress / Failed TC Mapping</h2>
-                                    <span className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-slate-100 text-slate-600">{inProgressTcs.length}</span>
-                                    <span className="text-slate-400 text-[10px]">{isTcMappingAccordionOpen ? '▲' : '▼'}</span>
-                                </div>
-                                <p className="text-[11px] text-slate-400 font-medium">Auto-matched on Generate & cached per project. Expand to override.</p>
-                            </div>
-                        </button>
-                        <button
-                            type="button"
-                            onClick={handleLoadInProgressTcs}
-                            disabled={isLoadingTcsMapping}
-                            className="px-3.5 h-9 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 text-xs font-bold rounded-xl transition-all disabled:opacity-50 flex items-center gap-1.5"
-                        >
-                            <span>{isLoadingTcsMapping ? "Scanning..." : "↻ Load / Override TCs"}</span>
-                        </button>
-                    </div>
-
-                    {isTcMappingAccordionOpen && (
-                        <div className="px-5 pb-5 border-t border-slate-100 pt-4">
-                            {inProgressTcs.length === 0 ? (
-                                <div className="p-6 text-center text-xs text-slate-400 italic bg-slate-50 rounded-xl border border-dashed border-slate-200">
-                                    Auto-runs when clicking <strong>Generate</strong>, or click <strong>↻ Load / Override TCs</strong> to adjust manually.
-                                </div>
-                            ) : (
-                                <div className="flex flex-col gap-2">
-                                    <div className="hidden md:grid grid-cols-12 gap-3 px-3 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                                        <div className="col-span-4">Test Case (Status)</div>
-                                        <div className="col-span-4">Google Sheet File (Folder A1)</div>
-                                        <div className="col-span-4">Tab Sheet</div>
-                                    </div>
-                                    {inProgressTcs.map((tc, idx) => {
-                                        const isFailed = tc.status.toLowerCase().includes('fail');
-                                        const fileOptions = driveFolderFiles.map(f => ({ value: f.id, label: f.name }));
-                                        const tabOptions = (driveFileTabsMap[tc.selectedFileId] || []).map(t => ({ value: t, label: t }));
-                                        return (
-                                            <div key={tc.id} className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center p-2.5 bg-slate-50 border border-slate-200 rounded-xl">
-                                                <div className="md:col-span-4 flex items-center justify-between gap-2 px-1">
-                                                    <span className="text-xs font-bold text-slate-800 truncate" title={tc.name}>{tc.name}</span>
-                                                    <div className="flex items-center gap-1.5 shrink-0">
-                                                        <span className="text-[10px] font-bold text-slate-500">{tc.remaining}</span>
-                                                        <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${isFailed ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-700'}`}>
-                                                            {tc.status}
-                                                        </span>
-                                                    </div>
-                                                </div>
-                                                <div className="md:col-span-4">
-                                                    <SearchableDropdown
-                                                        options={fileOptions}
-                                                        value={tc.selectedFileId}
-                                                        onChange={(val) => handleTcFileChange(idx, val)}
-                                                        placeholder="Select Google Sheet file..."
-                                                    />
-                                                </div>
-                                                <div className="md:col-span-4">
-                                                    <SearchableDropdown
-                                                        options={tabOptions}
-                                                        value={tc.selectedTab}
-                                                        onChange={(val) => handleTcTabChange(idx, val)}
-                                                        placeholder={tc.selectedFileId ? "Select Tab Sheet..." : "Select file first..."}
-                                                    />
-                                                </div>
-                                            </div>
-                                        );
-                                    })}
-                                </div>
-                            )}
-                        </div>
-                    )}
-                </section>
             </div>
 
             <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-40">
